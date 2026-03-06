@@ -44,6 +44,9 @@ function Install-RustDeskIfMissing {
             "User-Agent" = "TerraNovaITUtility"
         }
 
+        Write-Host "Checking latest RustDesk release from GitHub..." -ForegroundColor Cyan
+        Write-TNLog "Checking latest RustDesk release from GitHub..."
+
         $release = Invoke-RestMethod -Uri $api -Headers $headers
 
         $asset = $release.assets | Where-Object {
@@ -55,34 +58,49 @@ function Install-RustDeskIfMissing {
         }
 
         $url = $asset.browser_download_url
+        $temp = "$env:TEMP\rustdesk_install.exe"
 
         Write-Host "Downloading RustDesk..." -ForegroundColor Cyan
         Write-TNLog "Downloading RustDesk from $url"
 
-        $temp = "$env:TEMP\rustdesk_install.exe"
-
         $wc = New-Object System.Net.WebClient
         $wc.Headers.Add("user-agent", "TerraNovaITUtility")
         $wc.DownloadFile($url, $temp)
+        $wc.Dispose()
 
-        Write-Host "Installing RustDesk..." -ForegroundColor Cyan
-        Write-TNLog "Installing RustDesk..."
+        if (-not (Test-Path $temp)) {
+            throw "RustDesk installer was not downloaded."
+        }
 
-        Start-Process $temp -ArgumentList "--silent-install" -Wait
-        Start-Sleep -Seconds 8
+        $sizeMB = [math]::Round(((Get-Item $temp).Length / 1MB), 2)
+        Write-Host "RustDesk installer downloaded successfully. Size: $sizeMB MB" -ForegroundColor Green
+        Write-TNLog "RustDesk installer downloaded successfully. Size: $sizeMB MB"
+
+        Write-Host "Launching RustDesk installer..." -ForegroundColor Cyan
+        Write-Host "Please complete the installer if prompted. Waiting for installation to finish..." -ForegroundColor Yellow
+        Write-TNLog "Launching RustDesk installer in visible mode."
+
+        # Visible install for troubleshooting / testing
+        Start-Process -FilePath $temp -Wait
+
+        Write-Host "Installer process finished. Verifying installation..." -ForegroundColor Cyan
+        Write-TNLog "RustDesk installer process finished. Verifying installation..."
+
+        Start-Sleep -Seconds 5
 
         $installed = Get-RustDeskExePath
 
         if ($installed) {
-            Write-Host "RustDesk installed successfully." -ForegroundColor Green
-            Write-TNLog "RustDesk installed successfully."
+            Write-Host "RustDesk installed successfully at $installed" -ForegroundColor Green
+            Write-TNLog "RustDesk installed successfully at $installed"
         }
         else {
-            Write-Host "RustDesk installation completed but executable not found." -ForegroundColor Red
-            Write-TNLog "RustDesk installation verification failed."
+            Write-Host "RustDesk installer finished, but executable was not found." -ForegroundColor Red
+            Write-TNLog "RustDesk installer finished, but executable was not found."
         }
 
         Remove-Item $temp -Force -ErrorAction SilentlyContinue
+        Write-TNLog "Temporary RustDesk installer removed."
     }
     catch {
         Write-Host "RustDesk installation failed: $($_.Exception.Message)" -ForegroundColor Red
