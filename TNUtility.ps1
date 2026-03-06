@@ -201,17 +201,12 @@ Write-Host "RustDesk deployment completed" -ForegroundColor Green
 $sys = Get-SystemInfo
 $sys | Format-List
 
-# Save inventory using existing module logic
 Save-SystemInventory $sys
 Write-TNLog "System inventory saved"
 
-# Normalize inventory object for CSV and master inventory
 $inventoryRecord = Convert-ToTNInventoryRecord -SystemInfo $sys
 
-# Export per-device CSV
 Export-TNInventoryCsv -InventoryRecord $inventoryRecord
-
-# Update local master inventory
 Update-TNMasterInventory -InventoryRecord $inventoryRecord
 
 # 5) Cleanup
