@@ -15,10 +15,7 @@ Add-LocalGroupMember -Group "Administrators" -Member $user
 
 Write-Host "Local admin created." -ForegroundColor Green
 
-Get-LocalUser -Name $user
-
 }
-
 else{
 
 Write-Host "Local admin already exists." -ForegroundColor Yellow
