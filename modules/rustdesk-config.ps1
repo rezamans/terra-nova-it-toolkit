@@ -1,30 +1,63 @@
-function Configure-RustDesk {
+function Ensure-RustDeskServiceRunning {
 
-Write-Host "Configuring RustDesk..." -ForegroundColor Cyan
+    $svc = Get-Service -Name rustdesk -ErrorAction SilentlyContinue
 
-$server = "remote.terranovamedical.ca"
-$relay = "remote.terranovamedical.ca"
+    if ($svc) {
 
-$configPath = "C:\Program Files\RustDesk\config\RustDesk2.toml"
+        if ($svc.StartType -ne "Automatic") {
+            Set-Service -Name rustdesk -StartupType Automatic
+        }
 
-if (!(Test-Path $configPath)) {
+        if ($svc.Status -ne "Running") {
+            Start-Service -Name rustdesk
+        }
 
-New-Item -ItemType Directory -Path "C:\Program Files\RustDesk\config" -Force | Out-Null
-
+        Write-TNLog "RustDesk service running."
+    }
 }
 
-$config = @"
+function Write-RustDeskConfigToml {
+
+    $server = "remote.terranovamedical.ca"
+    $relay  = "remote.terranovamedical.ca"
+
+    $cfgDirs = @(
+        "C:\ProgramData\RustDesk\config",
+        "$env:APPDATA\RustDesk\config"
+    )
+
+    $content = @"
 [options]
 relay-server = "$relay"
 custom-rendezvous-server = "$server"
 "@
 
-$config | Out-File $configPath -Encoding ascii -Force
+    foreach ($dir in $cfgDirs) {
 
-Write-Host "RustDesk config applied." -ForegroundColor Green
+        if (!(Test-Path $dir)) {
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        }
 
-Restart-Service -Name rustdesk -ErrorAction SilentlyContinue
+        $path = Join-Path $dir "RustDesk2.toml"
 
-Write-Host "RustDesk service restarted." -ForegroundColor Green
+        $content | Out-File $path -Encoding ascii -Force
+
+        Write-TNLog "RustDesk config written to $path"
+    }
+}
+
+function Configure-RustDesk {
+
+    Write-Host "Configuring RustDesk..." -ForegroundColor Cyan
+    Write-TNLog "Applying RustDesk configuration"
+
+    Write-RustDeskConfigToml
+
+    Restart-Service -Name rustdesk -ErrorAction SilentlyContinue
+
+    Ensure-RustDeskServiceRunning
+
+    Write-Host "RustDesk configuration completed." -ForegroundColor Green
+    Write-TNLog "RustDesk configuration completed"
 
 }
