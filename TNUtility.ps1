@@ -7,6 +7,7 @@ Write-Host "Loading modules..." -ForegroundColor Cyan
 
 irm "$repo/localadmin.ps1" | iex
 irm "$repo/apps.ps1" | iex
+irm "$repo/rustdesk.ps1" | iex
 
 Write-Host "Modules loaded." -ForegroundColor Green
 
@@ -15,13 +16,12 @@ Ensure-LocalAdmin
 
 # 2) Install standard apps only if missing
 Install-AppIfMissing "Google Chrome" "googlechrome" "C:\Program Files\Google\Chrome\Application\chrome.exe"
-
 Install-AppIfMissing "Firefox" "firefox" "C:\Program Files\Mozilla Firefox\firefox.exe"
-
 Install-AppIfMissing "Zoom" "zoom" "C:\Program Files\Zoom\bin\Zoom.exe"
-
 Install-AppIfMissing "7-Zip" "7zip.install" "C:\Program Files\7-Zip\7z.exe"
-
 Install-AppIfMissing "Adobe Acrobat" "adobereader" ""
+
+# 3) RustDesk
+Install-RustDeskIfMissing
 
 Write-Host "Base deployment section completed." -ForegroundColor Green
