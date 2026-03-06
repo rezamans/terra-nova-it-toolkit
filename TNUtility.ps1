@@ -16,10 +16,71 @@ irm "$repo/cleanup.ps1" | iex
 
 Write-Host "Modules loaded." -ForegroundColor Green
 
-function Export-TNInventoryCsv {
+function Convert-ToTNInventoryRecord {
     param(
         [Parameter(Mandatory = $true)]
         $SystemInfo
+    )
+
+    $computerName = if ($SystemInfo.PSObject.Properties["ComputerName"]) { $SystemInfo.ComputerName } else { $env:COMPUTERNAME }
+    $currentUser  = if ($SystemInfo.PSObject.Properties["CurrentUser"]) { $SystemInfo.CurrentUser } elseif ($SystemInfo.PSObject.Properties["LoggedInUser"]) { $SystemInfo.LoggedInUser } else { $env:USERNAME }
+    $manufacturer = if ($SystemInfo.PSObject.Properties["Manufacturer"]) { $SystemInfo.Manufacturer } else { "" }
+    $model        = if ($SystemInfo.PSObject.Properties["Model"]) { $SystemInfo.Model } else { "" }
+    $serial       = if ($SystemInfo.PSObject.Properties["SerialNumber"]) { $SystemInfo.SerialNumber } else { "" }
+    $os           = if ($SystemInfo.PSObject.Properties["OS"]) { $SystemInfo.OS } else { "" }
+    $cpu          = if ($SystemInfo.PSObject.Properties["CPU"]) { $SystemInfo.CPU } else { "" }
+    $ram          = if ($SystemInfo.PSObject.Properties["RAM_GB"]) { $SystemInfo.RAM_GB } else { "" }
+
+    $diskTotal = if ($SystemInfo.PSObject.Properties["Disk_Total_GB"]) {
+        $SystemInfo.Disk_Total_GB
+    }
+    elseif ($SystemInfo.PSObject.Properties["DiskC_GB"]) {
+        $SystemInfo.DiskC_GB
+    }
+    else {
+        ""
+    }
+
+    $diskFree = if ($SystemInfo.PSObject.Properties["Disk_Free_GB"]) {
+        $SystemInfo.Disk_Free_GB
+    }
+    elseif ($SystemInfo.PSObject.Properties["FreeC_GB"]) {
+        $SystemInfo.FreeC_GB
+    }
+    else {
+        ""
+    }
+
+    $ipAddress = if ($SystemInfo.PSObject.Properties["IPAddress"]) { $SystemInfo.IPAddress } else { "" }
+    $macAddress = if ($SystemInfo.PSObject.Properties["MACAddress"]) { $SystemInfo.MACAddress } else { "" }
+    $rustDeskId = if ($SystemInfo.PSObject.Properties["RustDeskID"]) { $SystemInfo.RustDeskID } else { "" }
+    $clinicCode = if ($SystemInfo.PSObject.Properties["ClinicCode"]) { $SystemInfo.ClinicCode } else { "" }
+    $deviceType = if ($SystemInfo.PSObject.Properties["DeviceType"]) { $SystemInfo.DeviceType } else { "" }
+
+    return [PSCustomObject]@{
+        ExecutionDate = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+        ComputerName  = $computerName
+        CurrentUser   = $currentUser
+        Manufacturer  = $manufacturer
+        Model         = $model
+        SerialNumber  = $serial
+        OS            = $os
+        CPU           = $cpu
+        RAM_GB        = $ram
+        Disk_Total_GB = $diskTotal
+        Disk_Free_GB  = $diskFree
+        IPAddress     = $ipAddress
+        MACAddress    = $macAddress
+        RustDeskID    = $rustDeskId
+        ClinicCode    = $clinicCode
+        DeviceType    = $deviceType
+    }
+}
+
+function Export-TNInventoryCsv {
+    param(
+        [Parameter(Mandatory = $true)]
+        $InventoryRecord
     )
 
     try {
@@ -29,29 +90,10 @@ function Export-TNInventoryCsv {
             New-Item -Path $inventoryRoot -ItemType Directory -Force | Out-Null
         }
 
-        $computerName = $env:COMPUTERNAME
+        $computerName = if ([string]::IsNullOrWhiteSpace($InventoryRecord.ComputerName)) { $env:COMPUTERNAME } else { $InventoryRecord.ComputerName }
         $csvPath = Join-Path $inventoryRoot "$computerName`_inventory.csv"
 
-        $exportObject = [PSCustomObject]@{
-            ExecutionDate = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
-            ComputerName  = $SystemInfo.ComputerName
-            CurrentUser   = $SystemInfo.CurrentUser
-            Manufacturer  = $SystemInfo.Manufacturer
-            Model         = $SystemInfo.Model
-            SerialNumber  = $SystemInfo.SerialNumber
-            OS            = $SystemInfo.OS
-            CPU           = $SystemInfo.CPU
-            RAM_GB        = $SystemInfo.RAM_GB
-            Disk_Total_GB = $SystemInfo.Disk_Total_GB
-            Disk_Free_GB  = $SystemInfo.Disk_Free_GB
-            IPAddress     = $SystemInfo.IPAddress
-            MACAddress    = $SystemInfo.MACAddress
-            RustDeskID    = $SystemInfo.RustDeskID
-            ClinicCode    = $SystemInfo.ClinicCode
-            DeviceType    = $SystemInfo.DeviceType
-        }
-
-        $exportObject | Export-Csv -Path $csvPath -NoTypeInformation -Encoding UTF8 -Force
+        $InventoryRecord | Export-Csv -Path $csvPath -NoTypeInformation -Encoding UTF8 -Force
 
         Write-TNLog "System inventory CSV exported: $csvPath"
         Write-Host "Inventory CSV saved: $csvPath" -ForegroundColor Green
@@ -59,6 +101,60 @@ function Export-TNInventoryCsv {
     catch {
         Write-TNLog "CSV export failed: $($_.Exception.Message)"
         Write-Host "CSV export failed: $($_.Exception.Message)" -ForegroundColor Red
+    }
+}
+
+function Update-TNMasterInventory {
+    param(
+        [Parameter(Mandatory = $true)]
+        $InventoryRecord
+    )
+
+    try {
+        $inventoryRoot = "C:\TNUtility\inventory"
+
+        if (-not (Test-Path $inventoryRoot)) {
+            New-Item -Path $inventoryRoot -ItemType Directory -Force | Out-Null
+        }
+
+        $masterPath = Join-Path $inventoryRoot "MasterInventory.csv"
+        $masterData = @()
+
+        if (Test-Path $masterPath) {
+            $masterData = Import-Csv -Path $masterPath
+        }
+
+        $serialNumber = "$($InventoryRecord.SerialNumber)".Trim()
+        $computerName = "$($InventoryRecord.ComputerName)".Trim()
+
+        $filteredData = @()
+
+        foreach ($row in $masterData) {
+            $sameSerial = $false
+            $sameComputer = $false
+
+            if (-not [string]::IsNullOrWhiteSpace($serialNumber) -and "$($row.SerialNumber)".Trim() -eq $serialNumber) {
+                $sameSerial = $true
+            }
+
+            if (-not [string]::IsNullOrWhiteSpace($computerName) -and "$($row.ComputerName)".Trim() -eq $computerName) {
+                $sameComputer = $true
+            }
+
+            if (-not ($sameSerial -or $sameComputer)) {
+                $filteredData += $row
+            }
+        }
+
+        $filteredData += $InventoryRecord
+        $filteredData | Export-Csv -Path $masterPath -NoTypeInformation -Encoding UTF8 -Force
+
+        Write-TNLog "Master inventory updated: $masterPath"
+        Write-Host "Master Inventory updated: $masterPath" -ForegroundColor Green
+    }
+    catch {
+        Write-TNLog "Master inventory update failed: $($_.Exception.Message)"
+        Write-Host "Master inventory update failed: $($_.Exception.Message)" -ForegroundColor Red
     }
 }
 
@@ -90,8 +186,14 @@ $sys | Format-List
 Save-SystemInventory $sys
 Write-TNLog "System inventory saved"
 
-# Export CSV for reconciliation / final merge
-Export-TNInventoryCsv -SystemInfo $sys
+# Normalize inventory object for CSV and master inventory
+$inventoryRecord = Convert-ToTNInventoryRecord -SystemInfo $sys
+
+# Export per-device CSV
+Export-TNInventoryCsv -InventoryRecord $inventoryRecord
+
+# Update central master inventory
+Update-TNMasterInventory -InventoryRecord $inventoryRecord
 
 # 5) Cleanup
 Invoke-TempCleanup
