@@ -1,29 +1,49 @@
-function Test-ChocoInstalled {
-    param([string]$Package)
+function Test-AppInstalled {
 
-    try {
-        $result = choco list --local-only --exact $Package --limit-output 2>$null
+param(
+[string]$Name,
+[string]$ExePath
+)
 
-        if ($LASTEXITCODE -eq 0 -and $result) {
-            return $true
-        }
-        else {
-            return $false
-        }
-    }
-    catch {
-        return $false
+# Check registry uninstall entries
+$registry = Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* ,
+HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* `
+-ErrorAction SilentlyContinue |
+Where-Object { $_.DisplayName -like "*$Name*" }
+
+if ($registry) {
+    return $true
+}
+
+# Check executable
+if ($ExePath) {
+    if (Test-Path $ExePath) {
+        return $true
     }
 }
 
-function Install-AppIfMissing {
-    param([string]$Package)
+return $false
+}
 
-    if (Test-ChocoInstalled $Package) {
-        Write-Host "$Package already installed. Skipping..." -ForegroundColor Yellow
-    }
-    else {
-        Write-Host "Installing $Package ..." -ForegroundColor Green
-        choco install $Package -y --no-progress --limit-output
-    }
+function Install-AppIfMissing {
+
+param(
+[string]$Name,
+[string]$Package,
+[string]$ExePath
+)
+
+if (Test-AppInstalled -Name $Name -ExePath $ExePath) {
+
+Write-Host "$Name already installed. Skipping..." -ForegroundColor Yellow
+
+}
+else {
+
+Write-Host "Installing $Name ..." -ForegroundColor Green
+
+choco install $Package -y --no-progress
+
+}
+
 }
