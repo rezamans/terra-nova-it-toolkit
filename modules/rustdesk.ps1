@@ -1,140 +1,89 @@
-function Install-RustDeskIfMissing {
+function Get-RustDeskExePath {
 
-    $rustdeskExePaths = @(
+    $paths = @(
         "C:\Program Files\RustDesk\rustdesk.exe",
-        "C:\Program Files (x86)\RustDesk\rustdesk.exe"
+        "C:\Program Files (x86)\RustDesk\rustdesk.exe",
+        "$env:LOCALAPPDATA\Programs\RustDesk\rustdesk.exe",
+        "C:\ProgramData\chocolatey\bin\rustdesk.exe"
     )
 
-    function Get-RustDeskExePath {
-        foreach ($path in $rustdeskExePaths) {
-            if (Test-Path $path) {
-                return $path
-            }
-        }
-
-        $cmd = Get-Command rustdesk.exe -ErrorAction SilentlyContinue
-        if ($cmd) {
-            return $cmd.Source
-        }
-
-        return $null
-    }
-
-    function Get-LatestRustDeskDownloadUrl {
-        try {
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-            $apiUrl = "https://api.github.com/repos/rustdesk/rustdesk/releases/latest"
-
-            $headers = @{
-                "User-Agent" = "TerraNovaITUtility"
-            }
-
-            $release = Invoke-RestMethod -Uri $apiUrl -Headers $headers -Method Get
-
-            if (-not $release.assets) {
-                throw "No assets found in latest RustDesk release."
-            }
-
-            $asset = $release.assets | Where-Object {
-                $_.name -match 'windows.*x64.*\.exe$' -or
-                $_.name -match 'x86_64.*\.exe$'
-            } | Select-Object -First 1
-
-            if (-not $asset) {
-                $asset = $release.assets | Where-Object {
-                    $_.name -like "*.exe"
-                } | Select-Object -First 1
-            }
-
-            if (-not $asset) {
-                throw "No suitable RustDesk Windows installer found."
-            }
-
-            return $asset.browser_download_url
-        }
-        catch {
-            throw "Failed to get latest RustDesk release info: $($_.Exception.Message)"
+    foreach ($p in $paths) {
+        if (Test-Path $p) {
+            return $p
         }
     }
 
-    function Download-FileWithRetry {
-        param(
-            [Parameter(Mandatory = $true)][string]$Url,
-            [Parameter(Mandatory = $true)][string]$OutFile,
-            [int]$Retries = 3
-        )
+    return $null
+}
 
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+function Install-RustDeskIfMissing {
 
-        for ($i = 1; $i -le $Retries; $i++) {
-            try {
-                Write-Host "Download attempt $i..." -ForegroundColor Cyan
-                Write-TNLog "RustDesk download attempt $i from: $Url"
+    $existing = Get-RustDeskExePath
 
-                $wc = New-Object System.Net.WebClient
-                $wc.Headers.Add("user-agent", "TerraNovaITUtility")
-                $wc.DownloadFile($Url, $OutFile)
-                $wc.Dispose()
-
-                if ((Test-Path $OutFile) -and ((Get-Item $OutFile).Length -gt 0)) {
-                    return $true
-                }
-            }
-            catch {
-                Write-Host "Download attempt $i failed: $($_.Exception.Message)" -ForegroundColor Yellow
-                Write-TNLog "RustDesk download attempt $i failed: $($_.Exception.Message)"
-                Start-Sleep -Seconds 3
-            }
-        }
-
-        return $false
-    }
-
-    $existingExe = Get-RustDeskExePath
-    if ($existingExe) {
-        Write-Host "RustDesk already installed. Skipping..." -ForegroundColor Yellow
-        Write-TNLog "RustDesk already installed at: $existingExe"
+    if ($existing) {
+        Write-Host "RustDesk already installed at $existing" -ForegroundColor Yellow
+        Write-TNLog "RustDesk already installed at $existing"
         return
     }
 
-    Write-Host "RustDesk not found. Checking latest release from GitHub..." -ForegroundColor Cyan
-    Write-TNLog "RustDesk not found. Checking latest release from GitHub..."
+    Write-Host "RustDesk not found. Installing latest version..." -ForegroundColor Cyan
+    Write-TNLog "RustDesk not found. Installing latest version."
 
     try {
-        $downloadUrl = Get-LatestRustDeskDownloadUrl
-        Write-Host "Latest RustDesk installer found: $downloadUrl" -ForegroundColor Green
-        Write-TNLog "Latest RustDesk installer found: $downloadUrl"
 
-        $tempFile = Join-Path $env:TEMP "rustdesk_latest.exe"
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-        $downloaded = Download-FileWithRetry -Url $downloadUrl -OutFile $tempFile -Retries 3
+        $api = "https://api.github.com/repos/rustdesk/rustdesk/releases/latest"
 
-        if (-not $downloaded) {
-            throw "Unable to download latest RustDesk installer."
+        $headers = @{
+            "User-Agent" = "TerraNovaITUtility"
         }
+
+        $release = Invoke-RestMethod -Uri $api -Headers $headers
+
+        $asset = $release.assets | Where-Object {
+            $_.name -match "x86_64.*\.exe"
+        } | Select-Object -First 1
+
+        if (-not $asset) {
+            throw "No RustDesk installer found in latest release."
+        }
+
+        $url = $asset.browser_download_url
+
+        Write-Host "Downloading RustDesk..." -ForegroundColor Cyan
+        Write-TNLog "Downloading RustDesk from $url"
+
+        $temp = "$env:TEMP\rustdesk_install.exe"
+
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers.Add("user-agent", "TerraNovaITUtility")
+        $wc.DownloadFile($url, $temp)
 
         Write-Host "Installing RustDesk..." -ForegroundColor Cyan
-        Write-TNLog "Installing RustDesk..."
 
-        Start-Process -FilePath $tempFile -ArgumentList "--silent-install" -Wait
-        Start-Sleep -Seconds 8
+        Start-Process $temp -ArgumentList "--silent-install" -Wait
 
-        $installedExe = Get-RustDeskExePath
+        Start-Sleep 8
 
-        if ($installedExe) {
-            Write-Host "RustDesk installed successfully: $installedExe" -ForegroundColor Green
-            Write-TNLog "RustDesk installed successfully: $installedExe"
+        $installed = Get-RustDeskExePath
+
+        if ($installed) {
+            Write-Host "RustDesk installed successfully." -ForegroundColor Green
+            Write-TNLog "RustDesk installed successfully."
         }
         else {
-            Write-Host "RustDesk installation finished, but executable was not found." -ForegroundColor Red
-            Write-TNLog "RustDesk installation finished, but executable was not found."
+            Write-Host "RustDesk installation completed but executable not found." -ForegroundColor Red
+            Write-TNLog "RustDesk installation verification failed."
         }
 
-        Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+        Remove-Item $temp -Force -ErrorAction SilentlyContinue
+
     }
     catch {
+
         Write-Host "RustDesk installation failed: $($_.Exception.Message)" -ForegroundColor Red
         Write-TNLog "RustDesk installation failed: $($_.Exception.Message)"
+
     }
 }
