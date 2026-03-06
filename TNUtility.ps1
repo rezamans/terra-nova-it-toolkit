@@ -13,9 +13,54 @@ irm "$repo/rustdesk-config.ps1" | iex
 irm "$repo/system-info.ps1" | iex
 irm "$repo/inventory.ps1" | iex
 irm "$repo/cleanup.ps1" | iex
-irm "$repo/register-device.ps1" | iex
 
 Write-Host "Modules loaded." -ForegroundColor Green
+
+function Export-TNInventoryCsv {
+    param(
+        [Parameter(Mandatory = $true)]
+        $SystemInfo
+    )
+
+    try {
+        $inventoryRoot = "C:\TNUtility\inventory"
+
+        if (-not (Test-Path $inventoryRoot)) {
+            New-Item -Path $inventoryRoot -ItemType Directory -Force | Out-Null
+        }
+
+        $computerName = $env:COMPUTERNAME
+        $csvPath = Join-Path $inventoryRoot "$computerName`_inventory.csv"
+
+        $exportObject = [PSCustomObject]@{
+            ExecutionDate = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+            ComputerName  = $SystemInfo.ComputerName
+            CurrentUser   = $SystemInfo.CurrentUser
+            Manufacturer  = $SystemInfo.Manufacturer
+            Model         = $SystemInfo.Model
+            SerialNumber  = $SystemInfo.SerialNumber
+            OS            = $SystemInfo.OS
+            CPU           = $SystemInfo.CPU
+            RAM_GB        = $SystemInfo.RAM_GB
+            Disk_Total_GB = $SystemInfo.Disk_Total_GB
+            Disk_Free_GB  = $SystemInfo.Disk_Free_GB
+            IPAddress     = $SystemInfo.IPAddress
+            MACAddress    = $SystemInfo.MACAddress
+            RustDeskID    = $SystemInfo.RustDeskID
+            ClinicCode    = $SystemInfo.ClinicCode
+            DeviceType    = $SystemInfo.DeviceType
+        }
+
+        $exportObject | Export-Csv -Path $csvPath -NoTypeInformation -Encoding UTF8 -Force
+
+        Write-TNLog "System inventory CSV exported: $csvPath"
+        Write-Host "Inventory CSV saved: $csvPath" -ForegroundColor Green
+    }
+    catch {
+        Write-TNLog "CSV export failed: $($_.Exception.Message)"
+        Write-Host "CSV export failed: $($_.Exception.Message)" -ForegroundColor Red
+    }
+}
 
 Initialize-TNEnvironment
 Write-TNLog "TNUtility started"
@@ -41,13 +86,16 @@ Write-TNLog "RustDesk deployment completed"
 $sys = Get-SystemInfo
 $sys | Format-List
 
+# Save inventory using existing module logic
 Save-SystemInventory $sys
+Write-TNLog "System inventory saved"
 
-# 5) Register device
-Register-Device $sys
+# Export CSV for reconciliation / final merge
+Export-TNInventoryCsv -SystemInfo $sys
 
-# 6) Cleanup
+# 5) Cleanup
 Invoke-TempCleanup
+Write-TNLog "Temp cleanup completed"
 
 Write-TNLog "Deployment finished"
 Write-Host "Base deployment section completed." -ForegroundColor Green
