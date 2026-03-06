@@ -7,7 +7,9 @@ function Get-RustDeskExePath {
     )
 
     foreach ($c in $candidates) {
-        if (Test-Path $c) { return $c }
+        if (Test-Path $c) {
+            return $c
+        }
     }
 
     try {
@@ -15,12 +17,16 @@ function Get-RustDeskExePath {
         if ($cmd -and $cmd.Source -and (Test-Path $cmd.Source)) {
             return $cmd.Source
         }
-    } catch {}
+    }
+    catch { }
 
     return $null
 }
 
 function Ensure-RustDeskServiceRunning {
+    Write-Host "Checking RustDesk service..." -ForegroundColor Cyan
+    Write-TNLog "Checking RustDesk service..."
+
     $svc = Get-Service -Name "rustdesk" -ErrorAction SilentlyContinue
 
     if (-not $svc) {
@@ -30,29 +36,47 @@ function Ensure-RustDeskServiceRunning {
     }
 
     if (-not $svc) {
+        Write-Host "RustDesk service not found." -ForegroundColor Yellow
         Write-TNLog "RustDesk service not found."
         return $null
     }
 
+    Write-Host "RustDesk service found: $($svc.Name) - Status: $($svc.Status)" -ForegroundColor Green
+    Write-TNLog "RustDesk service found: $($svc.Name) - Status: $($svc.Status)"
+
     try {
         Set-Service -Name $svc.Name -StartupType Automatic -ErrorAction SilentlyContinue
-    } catch {}
-
-    if ($svc.Status -ne "Running") {
-        Start-Service -Name $svc.Name -ErrorAction SilentlyContinue
-        Start-Sleep -Seconds 3
-        $svc.Refresh()
+        Write-TNLog "RustDesk service startup type set to Automatic."
+    }
+    catch {
+        Write-Host "Could not set RustDesk service startup type: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-TNLog "Could not set RustDesk service startup type: $($_.Exception.Message)"
     }
 
-    Write-TNLog "RustDesk service status: $($svc.Status)"
+    if ($svc.Status -ne "Running") {
+        try {
+            Write-Host "Starting RustDesk service..." -ForegroundColor Cyan
+            Write-TNLog "Starting RustDesk service..."
+            Start-Service -Name $svc.Name -ErrorAction Stop
+            Start-Sleep -Seconds 3
+            $svc.Refresh()
+            Write-Host "RustDesk service status after start: $($svc.Status)" -ForegroundColor Green
+            Write-TNLog "RustDesk service status after start: $($svc.Status)"
+        }
+        catch {
+            Write-Host "Failed to start RustDesk service: $($_.Exception.Message)" -ForegroundColor Red
+            Write-TNLog "Failed to start RustDesk service: $($_.Exception.Message)"
+        }
+    }
+
     return $svc
 }
 
 function Write-RustDeskConfigToml {
     param(
-        [string]$IdServer,
-        [string]$RelayServer,
-        [string]$Key
+        [Parameter(Mandatory = $true)][string]$IdServer,
+        [Parameter(Mandatory = $true)][string]$RelayServer,
+        [Parameter(Mandatory = $true)][string]$Key
     )
 
     $dirs = @(
@@ -68,12 +92,28 @@ key = "$Key"
 
     foreach ($dir in $dirs) {
         try {
-            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            if (-not (Test-Path $dir)) {
+                New-Item -ItemType Directory -Force -Path $dir | Out-Null
+                Write-Host "Created config directory: $dir" -ForegroundColor Cyan
+                Write-TNLog "Created config directory: $dir"
+            }
+
             $path = Join-Path $dir "RustDesk2.toml"
+
             $content | Out-File -Encoding utf8 -FilePath $path -Force
-            Write-TNLog "RustDesk TOML written to $path"
-        } catch {
-            Write-TNLog "Failed to write TOML in $dir : $($_.Exception.Message)"
+
+            if (Test-Path $path) {
+                Write-Host "RustDesk config written: $path" -ForegroundColor Green
+                Write-TNLog "RustDesk config written: $path"
+            }
+            else {
+                Write-Host "RustDesk config file was not created: $path" -ForegroundColor Red
+                Write-TNLog "RustDesk config file was not created: $path"
+            }
+        }
+        catch {
+            Write-Host "Failed to write RustDesk config in $dir : $($_.Exception.Message)" -ForegroundColor Red
+            Write-TNLog "Failed to write RustDesk config in $dir : $($_.Exception.Message)"
         }
     }
 }
@@ -88,14 +128,15 @@ function Apply-RustDeskConfigString {
         throw "RustDesk executable not found."
     }
 
-    Write-TNLog "Applying RustDesk config-string using --config"
+    Write-Host "Applying RustDesk config-string..." -ForegroundColor Cyan
+    Write-TNLog "Applying RustDesk config-string using: $exe --config"
 
     $p = Start-Process -FilePath $exe `
         -ArgumentList @("--config", $ConfigString) `
-        -Verb RunAs `
         -Wait `
         -PassThru
 
+    Write-Host "RustDesk --config ExitCode: $($p.ExitCode)" -ForegroundColor Yellow
     Write-TNLog "RustDesk --config ExitCode: $($p.ExitCode)"
 
     if ($p.ExitCode -ne 0) {
@@ -105,8 +146,8 @@ function Apply-RustDeskConfigString {
 
 function Configure-RustDesk {
 
-    Write-Host "Configuring RustDesk..." -ForegroundColor Cyan
-    Write-TNLog "Starting RustDesk configuration"
+    Write-Host "================ RustDesk Config Phase ================" -ForegroundColor Magenta
+    Write-TNLog "================ RustDesk Config Phase ================"
 
     $RustDeskIdServer     = "remote.terranovamedical.ca"
     $RustDeskRelayServer  = "remote.terranovamedical.ca"
@@ -115,48 +156,60 @@ function Configure-RustDesk {
 
     $exe = Get-RustDeskExePath
     if (-not $exe) {
-        Write-TNLog "RustDesk exe not found. Skipping configuration."
+        Write-Host "RustDesk executable not found. Skipping configuration." -ForegroundColor Red
+        Write-TNLog "RustDesk executable not found. Skipping configuration."
         return
     }
 
-    # 1) launch once so folders/service exist
+    Write-Host "RustDesk executable found at: $exe" -ForegroundColor Green
+    Write-TNLog "RustDesk executable found at: $exe"
+
     try {
-        Start-Process -FilePath $exe -Verb RunAs -ErrorAction SilentlyContinue
+        Write-Host "Launching RustDesk once..." -ForegroundColor Cyan
+        Write-TNLog "Launching RustDesk once..."
+        Start-Process -FilePath $exe -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 5
-        Write-TNLog "RustDesk launched once."
-    } catch {
+    }
+    catch {
+        Write-Host "Initial RustDesk launch warning: $($_.Exception.Message)" -ForegroundColor Yellow
         Write-TNLog "Initial RustDesk launch warning: $($_.Exception.Message)"
     }
 
-    # 2) ensure service is running
     $svc = Ensure-RustDeskServiceRunning
 
-    # 3) write TOML as fallback/supporting config
+    Write-Host "Writing TOML config..." -ForegroundColor Cyan
+    Write-TNLog "Writing TOML config..."
     Write-RustDeskConfigToml `
         -IdServer $RustDeskIdServer `
         -RelayServer $RustDeskRelayServer `
         -Key $RustDeskKey
 
-    # 4) apply the real server config
     try {
         Apply-RustDeskConfigString -ConfigString $RustDeskConfigString
+        Write-Host "RustDesk config-string imported successfully." -ForegroundColor Green
         Write-TNLog "RustDesk config-string imported successfully."
-    } catch {
+    }
+    catch {
+        Write-Host "RustDesk config-string import failed: $($_.Exception.Message)" -ForegroundColor Red
         Write-TNLog "RustDesk config-string import failed: $($_.Exception.Message)"
     }
 
-    # 5) restart service after import
     if ($svc) {
         try {
-            Restart-Service -Name $svc.Name -Force -ErrorAction SilentlyContinue
+            Write-Host "Restarting RustDesk service..." -ForegroundColor Cyan
+            Write-TNLog "Restarting RustDesk service..."
+            Restart-Service -Name $svc.Name -Force -ErrorAction Stop
             Start-Sleep -Seconds 3
             $svc.Refresh()
-            Write-TNLog "RustDesk service restarted. Status=$($svc.Status)"
-        } catch {
-            Write-TNLog "RustDesk service restart warning: $($_.Exception.Message)"
+            Write-Host "RustDesk service status after restart: $($svc.Status)" -ForegroundColor Green
+            Write-TNLog "RustDesk service status after restart: $($svc.Status)"
+        }
+        catch {
+            Write-Host "RustDesk service restart failed: $($_.Exception.Message)" -ForegroundColor Red
+            Write-TNLog "RustDesk service restart failed: $($_.Exception.Message)"
         }
     }
 
-    Write-Host "RustDesk configuration completed." -ForegroundColor Green
-    Write-TNLog "RustDesk configuration completed"
+    Write-Host "RustDesk configuration phase completed." -ForegroundColor Magenta
+    Write-TNLog "RustDesk configuration phase completed."
 }
