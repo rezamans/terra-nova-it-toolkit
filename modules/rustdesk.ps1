@@ -1,61 +1,52 @@
 function Install-RustDeskIfMissing {
 
-    $rustdeskExePaths = @(
-        "C:\Program Files\RustDesk\rustdesk.exe",
-        "C:\Program Files (x86)\RustDesk\rustdesk.exe"
-    )
+    $rustdeskExe = "C:\Program Files\RustDesk\rustdesk.exe"
 
-    function Get-RustDeskExePath {
-        foreach ($path in $rustdeskExePaths) {
-            if (Test-Path $path) {
-                return $path
-            }
-        }
-
-        $cmd = Get-Command rustdesk.exe -ErrorAction SilentlyContinue
-        if ($cmd) {
-            return $cmd.Source
-        }
-
-        return $null
-    }
-
-    $existingExe = Get-RustDeskExePath
-
-    if ($existingExe) {
+    if (Test-Path $rustdeskExe) {
         Write-Host "RustDesk already installed. Skipping..." -ForegroundColor Yellow
-        Write-TNLog "RustDesk already installed at: $existingExe"
+        Write-TNLog "RustDesk already installed."
         return
     }
 
-    Write-Host "Installing RustDesk..." -ForegroundColor Cyan
-    Write-TNLog "Installing RustDesk..."
+    Write-Host "RustDesk not found. Installing from GitHub..." -ForegroundColor Cyan
+    Write-TNLog "Downloading RustDesk from GitHub..."
 
     try {
-        choco install rustdesk -y --force --no-progress | Out-Null
+
+        $tempFile = "$env:TEMP\rustdesk_install.exe"
+
+        $downloadUrl = "https://github.com/rustdesk/rustdesk/releases/latest/download/rustdesk.exe"
+
+        Invoke-WebRequest $downloadUrl -OutFile $tempFile
+
+        Write-Host "RustDesk downloaded. Installing..." -ForegroundColor Cyan
+        Write-TNLog "RustDesk installer downloaded."
+
+        Start-Process $tempFile -ArgumentList "--silent-install" -Wait
+
         Start-Sleep -Seconds 5
 
-        $installedExe = Get-RustDeskExePath
+        if (Test-Path $rustdeskExe) {
 
-        if ($installedExe) {
-            Write-Host "RustDesk installed successfully: $installedExe" -ForegroundColor Green
-            Write-TNLog "RustDesk installed successfully: $installedExe"
+            Write-Host "RustDesk installed successfully." -ForegroundColor Green
+            Write-TNLog "RustDesk installed successfully."
 
-            try {
-                Start-Process -FilePath $installedExe -ErrorAction SilentlyContinue
-                Write-TNLog "RustDesk launch test executed."
-            }
-            catch {
-                Write-TNLog "RustDesk installed but launch test failed: $($_.Exception.Message)"
-            }
         }
         else {
-            Write-Host "RustDesk install reported success, but executable was not found." -ForegroundColor Red
-            Write-TNLog "RustDesk install reported success, but executable was not found."
+
+            Write-Host "RustDesk installation may have failed." -ForegroundColor Red
+            Write-TNLog "RustDesk installation failed."
+
         }
+
+        Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+
     }
     catch {
-        Write-Host "RustDesk installation failed: $($_.Exception.Message)" -ForegroundColor Red
-        Write-TNLog "RustDesk installation failed: $($_.Exception.Message)"
+
+        Write-Host "RustDesk install error: $($_.Exception.Message)" -ForegroundColor Red
+        Write-TNLog "RustDesk install error: $($_.Exception.Message)"
+
     }
+
 }
