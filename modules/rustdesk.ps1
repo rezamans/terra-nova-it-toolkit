@@ -1,30 +1,50 @@
-function Test-RustDeskInstalled {
-
-    $registry = Get-ItemProperty `
-    HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* ,
-    HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* `
-    -ErrorAction SilentlyContinue |
-    Where-Object { $_.DisplayName -like "*RustDesk*" }
-
-    if ($registry) {
-        return $true
-    }
-
-    if (Test-Path "C:\Program Files\RustDesk\rustdesk.exe") {
-        return $true
-    }
-
-    return $false
-}
-
 function Install-RustDeskIfMissing {
 
-    if (Test-RustDeskInstalled) {
-        Write-Host "RustDesk already installed. Skipping..." -ForegroundColor Yellow
-    }
-    else {
-        Write-Host "Installing RustDesk ..." -ForegroundColor Green
-        choco install rustdesk -y --no-progress
+    $rustdeskExePaths = @(
+        "C:\Program Files\RustDesk\rustdesk.exe",
+        "C:\Program Files (x86)\RustDesk\rustdesk.exe"
+    )
+
+    $isInstalled = $false
+
+    foreach ($path in $rustdeskExePaths) {
+        if (Test-Path $path) {
+            $isInstalled = $true
+            break
+        }
     }
 
+    if ($isInstalled) {
+        Write-Host "RustDesk already installed. Skipping..." -ForegroundColor Yellow
+        Write-TNLog "RustDesk already installed. Skipping..."
+        return
+    }
+
+    Write-Host "Installing RustDesk..." -ForegroundColor Cyan
+    Write-TNLog "Installing RustDesk..."
+
+    try {
+        choco install rustdesk -y --no-progress
+
+        $installedAfter = $false
+        foreach ($path in $rustdeskExePaths) {
+            if (Test-Path $path) {
+                $installedAfter = $true
+                break
+            }
+        }
+
+        if ($installedAfter) {
+            Write-Host "RustDesk installed successfully." -ForegroundColor Green
+            Write-TNLog "RustDesk installed successfully."
+        }
+        else {
+            Write-Host "RustDesk installation completed, but executable not found." -ForegroundColor Red
+            Write-TNLog "RustDesk installation completed, but executable not found."
+        }
+    }
+    catch {
+        Write-Host "RustDesk installation failed: $($_.Exception.Message)" -ForegroundColor Red
+        Write-TNLog "RustDesk installation failed: $($_.Exception.Message)"
+    }
 }
