@@ -28,6 +28,7 @@ Install-RustDeskIfMissing
 Configure-RustDesk
 
 # 4) System Info
-Get-SystemInfo
+$sys = Get-SystemInfo
+$sys | Format-List
 
 Write-Host "Base deployment section completed." -ForegroundColor Green
