@@ -1,17 +1,24 @@
 function Get-RustDeskExePath {
-
-    $paths = @(
+    $candidates = @(
         "C:\Program Files\RustDesk\rustdesk.exe",
         "C:\Program Files (x86)\RustDesk\rustdesk.exe",
         "$env:LOCALAPPDATA\Programs\RustDesk\rustdesk.exe",
         "C:\ProgramData\chocolatey\bin\rustdesk.exe"
     )
 
-    foreach ($p in $paths) {
-        if (Test-Path $p) {
-            return $p
+    foreach ($c in $candidates) {
+        if (Test-Path $c) {
+            return $c
         }
     }
+
+    try {
+        $cmd = Get-Command rustdesk.exe -ErrorAction SilentlyContinue
+        if ($cmd -and $cmd.Source -and (Test-Path $cmd.Source)) {
+            return $cmd.Source
+        }
+    }
+    catch { }
 
     return $null
 }
@@ -30,11 +37,9 @@ function Install-RustDeskIfMissing {
     Write-TNLog "RustDesk not found. Installing latest version."
 
     try {
-
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
         $api = "https://api.github.com/repos/rustdesk/rustdesk/releases/latest"
-
         $headers = @{
             "User-Agent" = "TerraNovaITUtility"
         }
@@ -61,10 +66,10 @@ function Install-RustDeskIfMissing {
         $wc.DownloadFile($url, $temp)
 
         Write-Host "Installing RustDesk..." -ForegroundColor Cyan
+        Write-TNLog "Installing RustDesk..."
 
         Start-Process $temp -ArgumentList "--silent-install" -Wait
-
-        Start-Sleep 8
+        Start-Sleep -Seconds 8
 
         $installed = Get-RustDeskExePath
 
@@ -78,12 +83,9 @@ function Install-RustDeskIfMissing {
         }
 
         Remove-Item $temp -Force -ErrorAction SilentlyContinue
-
     }
     catch {
-
         Write-Host "RustDesk installation failed: $($_.Exception.Message)" -ForegroundColor Red
         Write-TNLog "RustDesk installation failed: $($_.Exception.Message)"
-
     }
 }
