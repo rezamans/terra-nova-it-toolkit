@@ -8,6 +8,7 @@ Write-Host "Loading modules..." -ForegroundColor Cyan
 irm "$repo/localadmin.ps1" | iex
 irm "$repo/apps.ps1" | iex
 irm "$repo/rustdesk.ps1" | iex
+irm "$repo/rustdesk-config.ps1" | iex
 
 Write-Host "Modules loaded." -ForegroundColor Green
 
@@ -23,5 +24,6 @@ Install-AppIfMissing "Adobe Acrobat" "adobereader" ""
 
 # 3) RustDesk
 Install-RustDeskIfMissing
+Configure-RustDesk
 
 Write-Host "Base deployment section completed." -ForegroundColor Green
