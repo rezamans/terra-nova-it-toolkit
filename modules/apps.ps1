@@ -5,8 +5,8 @@ param(
 [string]$ExePath
 )
 
-# Check registry uninstall entries
-$registry = Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* ,
+$registry = Get-ItemProperty `
+HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* ,
 HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* `
 -ErrorAction SilentlyContinue |
 Where-Object { $_.DisplayName -like "*$Name*" }
@@ -15,7 +15,6 @@ if ($registry) {
     return $true
 }
 
-# Check executable
 if ($ExePath) {
     if (Test-Path $ExePath) {
         return $true
@@ -41,7 +40,6 @@ Write-Host "$Name already installed. Skipping..." -ForegroundColor Yellow
 else {
 
 Write-Host "Installing $Name ..." -ForegroundColor Green
-
 choco install $Package -y --no-progress
 
 }
