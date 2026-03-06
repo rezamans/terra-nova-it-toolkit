@@ -22,8 +22,20 @@ function Convert-ToTNInventoryRecord {
         $SystemInfo
     )
 
-    $computerName = if ($SystemInfo.PSObject.Properties["ComputerName"]) { $SystemInfo.ComputerName } else { $env:COMPUTERNAME }
-    $currentUser  = if ($SystemInfo.PSObject.Properties["CurrentUser"]) { $SystemInfo.CurrentUser } elseif ($SystemInfo.PSObject.Properties["LoggedInUser"]) { $SystemInfo.LoggedInUser } else { $env:USERNAME }
+    $computerName = if ($SystemInfo.PSObject.Properties["ComputerName"]) {
+        $SystemInfo.ComputerName
+    } else {
+        $env:COMPUTERNAME
+    }
+
+    $currentUser = if ($SystemInfo.PSObject.Properties["CurrentUser"]) {
+        $SystemInfo.CurrentUser
+    } elseif ($SystemInfo.PSObject.Properties["LoggedInUser"]) {
+        $SystemInfo.LoggedInUser
+    } else {
+        $env:USERNAME
+    }
+
     $manufacturer = if ($SystemInfo.PSObject.Properties["Manufacturer"]) { $SystemInfo.Manufacturer } else { "" }
     $model        = if ($SystemInfo.PSObject.Properties["Model"]) { $SystemInfo.Model } else { "" }
     $serial       = if ($SystemInfo.PSObject.Properties["SerialNumber"]) { $SystemInfo.SerialNumber } else { "" }
@@ -33,21 +45,17 @@ function Convert-ToTNInventoryRecord {
 
     $diskTotal = if ($SystemInfo.PSObject.Properties["Disk_Total_GB"]) {
         $SystemInfo.Disk_Total_GB
-    }
-    elseif ($SystemInfo.PSObject.Properties["DiskC_GB"]) {
+    } elseif ($SystemInfo.PSObject.Properties["DiskC_GB"]) {
         $SystemInfo.DiskC_GB
-    }
-    else {
+    } else {
         ""
     }
 
     $diskFree = if ($SystemInfo.PSObject.Properties["Disk_Free_GB"]) {
         $SystemInfo.Disk_Free_GB
-    }
-    elseif ($SystemInfo.PSObject.Properties["FreeC_GB"]) {
+    } elseif ($SystemInfo.PSObject.Properties["FreeC_GB"]) {
         $SystemInfo.FreeC_GB
-    }
-    else {
+    } else {
         ""
     }
 
@@ -90,7 +98,12 @@ function Export-TNInventoryCsv {
             New-Item -Path $inventoryRoot -ItemType Directory -Force | Out-Null
         }
 
-        $computerName = if ([string]::IsNullOrWhiteSpace($InventoryRecord.ComputerName)) { $env:COMPUTERNAME } else { $InventoryRecord.ComputerName }
+        $computerName = if ([string]::IsNullOrWhiteSpace($InventoryRecord.ComputerName)) {
+            $env:COMPUTERNAME
+        } else {
+            $InventoryRecord.ComputerName
+        }
+
         $csvPath = Join-Path $inventoryRoot "$computerName`_inventory.csv"
 
         $InventoryRecord | Export-Csv -Path $csvPath -NoTypeInformation -Encoding UTF8 -Force
@@ -174,9 +187,15 @@ Install-AppIfMissing "7-Zip" "7zip.install" "C:\Program Files\7-Zip\7z.exe"
 Write-TNLog "Application deployment completed"
 
 # 3) RustDesk
+Write-Host "Deploying RustDesk..." -ForegroundColor Cyan
+Write-TNLog "Starting RustDesk deployment"
+
 Install-RustDeskIfMissing
+Start-Sleep -Seconds 5
 Configure-RustDesk
+
 Write-TNLog "RustDesk deployment completed"
+Write-Host "RustDesk deployment completed" -ForegroundColor Green
 
 # 4) System Info
 $sys = Get-SystemInfo
@@ -192,7 +211,7 @@ $inventoryRecord = Convert-ToTNInventoryRecord -SystemInfo $sys
 # Export per-device CSV
 Export-TNInventoryCsv -InventoryRecord $inventoryRecord
 
-# Update central master inventory
+# Update local master inventory
 Update-TNMasterInventory -InventoryRecord $inventoryRecord
 
 # 5) Cleanup
