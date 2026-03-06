@@ -19,33 +19,36 @@ Write-Host "Modules loaded." -ForegroundColor Green
 Initialize-TNEnvironment
 Write-TNLog "TNUtility started"
 
-# 1️⃣ Local Admin
+# 1) Ensure Local Admin first
 Ensure-LocalAdmin
 Write-TNLog "Local admin check completed"
 
-# 2️⃣ Applications
+# 2) Install standard apps only if missing
 Install-AppIfMissing "Google Chrome" "googlechrome" "C:\Program Files\Google\Chrome\Application\chrome.exe"
 Install-AppIfMissing "Firefox" "firefox" "C:\Program Files\Mozilla Firefox\firefox.exe"
 Install-AppIfMissing "Zoom" "zoom" "C:\Program Files\Zoom\bin\Zoom.exe"
 Install-AppIfMissing "7-Zip" "7zip.install" "C:\Program Files\7-Zip\7z.exe"
-Install-AppIfMissing "Adobe Acrobat" "adobereader" ""
 
 Write-TNLog "Application deployment completed"
 
-# 3️⃣ RustDesk
+# 3) RustDesk
 Install-RustDeskIfMissing
 Configure-RustDesk
 
 Write-TNLog "RustDesk deployment completed"
 
-# 4️⃣ System Info
+# 4) System Info
 $sys = Get-SystemInfo
 $sys | Format-List
 
 Save-SystemInventory $sys
 
-# 5️⃣ Cleanup
+# 5) Cleanup
 Invoke-TempCleanup
+
+Write-TNLog "Deployment finished"
+
+Write-Host "Base deployment section completed." -ForegroundColor Green
 
 Write-TNLog "Deployment finished"
 
