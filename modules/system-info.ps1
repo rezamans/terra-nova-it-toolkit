@@ -8,7 +8,7 @@ function Get-SystemInfo {
     $cpu  = Get-CimInstance Win32_Processor | Select-Object -First 1
     $disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
 
-    $info = [PSCustomObject]@{
+    return [PSCustomObject]@{
         ComputerName = $env:COMPUTERNAME
         LoggedInUser = $env:USERNAME
         Manufacturer = $cs.Manufacturer
@@ -21,8 +21,4 @@ function Get-SystemInfo {
         DiskC_GB     = [math]::Round($disk.Size / 1GB, 2)
         FreeC_GB     = [math]::Round($disk.FreeSpace / 1GB, 2)
     }
-
-    $info | Format-List
-
-    return $info
 }
