@@ -50,6 +50,3 @@ Write-TNLog "Deployment finished"
 
 Write-Host "Base deployment section completed." -ForegroundColor Green
 
-Write-TNLog "Deployment finished"
-
-Write-Host "Base deployment section completed." -ForegroundColor Green
