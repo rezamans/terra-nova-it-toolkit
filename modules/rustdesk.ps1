@@ -80,7 +80,6 @@ function Install-RustDeskIfMissing {
         Write-Host "Please complete the installer if prompted. Waiting for installation to finish..." -ForegroundColor Yellow
         Write-TNLog "Launching RustDesk installer in visible mode."
 
-        # Visible install for troubleshooting / testing
         Start-Process -FilePath $temp -Wait
 
         Write-Host "Installer process finished. Verifying installation..." -ForegroundColor Cyan
