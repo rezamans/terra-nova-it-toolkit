@@ -1,178 +1,199 @@
-function Stop-RustDeskAll {
-    Write-Host "Stopping RustDesk service/process..." -ForegroundColor Cyan
-    Write-TNLog "Stopping RustDesk service/process..."
+# TNUtility.ps1
+# Terra Nova IT Utility
+# Final version
 
-    try {
-        $svc = Get-Service -Name "rustdesk" -ErrorAction SilentlyContinue
-        if (-not $svc) {
-            $svc = Get-Service | Where-Object {
-                $_.Name -match "rustdesk" -or $_.DisplayName -match "RustDesk"
-            } | Select-Object -First 1
-        }
+[CmdletBinding()]
+param(
+    [switch]$ForceResetRustDesk
+)
 
-        if ($svc -and $svc.Status -eq "Running") {
-            Stop-Service -Name $svc.Name -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 2
-        }
-    }
-    catch { }
+$ErrorActionPreference = 'Continue'
 
-    foreach ($procName in @("rustdesk", "RustDesk")) {
-        try {
-            Get-Process -Name $procName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-        }
-        catch { }
-    }
+Write-Host "Terra Nova IT Utility Started..." -ForegroundColor Cyan
+Write-Host "Running by Reza Mansouri" -ForegroundColor Yellow
 
-    Start-Sleep -Seconds 2
-}
+$repo = "https://raw.githubusercontent.com/rezamans/terra-nova-it-toolkit/main/modules"
 
-function Remove-RustDeskExistingConfig {
-    Write-Host "Removing existing RustDesk config/profile..." -ForegroundColor Cyan
-    Write-TNLog "Removing existing RustDesk config/profile..."
+Write-Host "Loading modules..." -ForegroundColor Cyan
 
-    $paths = @(
-        "C:\ProgramData\RustDesk",
-        "$env:APPDATA\RustDesk",
-        "$env:LOCALAPPDATA\RustDesk"
+irm "$repo/logging.ps1" | iex
+irm "$repo/localadmin.ps1" | iex
+irm "$repo/apps.ps1" | iex
+irm "$repo/rustdesk.ps1" | iex
+irm "$repo/rustdesk-config.ps1" | iex
+irm "$repo/system-info.ps1" | iex
+irm "$repo/inventory.ps1" | iex
+irm "$repo/cleanup.ps1" | iex
+
+Write-Host "Modules loaded." -ForegroundColor Green
+
+function Convert-ToTNInventoryRecord {
+    param(
+        [Parameter(Mandatory = $true)]
+        $SystemInfo
     )
 
-    foreach ($p in $paths) {
-        try {
-            if (Test-Path $p) {
-                Remove-Item $p -Recurse -Force -ErrorAction SilentlyContinue
-                Write-TNLog "Removed: $p"
-            }
-        }
-        catch {
-            Write-TNLog "Failed removing $p : $($_.Exception.Message)"
-        }
+    $computerName = if ($SystemInfo.PSObject.Properties["ComputerName"]) { $SystemInfo.ComputerName } else { $env:COMPUTERNAME }
+    $currentUser  = if ($SystemInfo.PSObject.Properties["CurrentUser"]) { $SystemInfo.CurrentUser } elseif ($SystemInfo.PSObject.Properties["LoggedInUser"]) { $SystemInfo.LoggedInUser } else { "$env:USERDOMAIN\$env:USERNAME" }
+    $manufacturer = if ($SystemInfo.PSObject.Properties["Manufacturer"]) { $SystemInfo.Manufacturer } else { "" }
+    $model        = if ($SystemInfo.PSObject.Properties["Model"]) { $SystemInfo.Model } else { "" }
+    $serial       = if ($SystemInfo.PSObject.Properties["SerialNumber"]) { $SystemInfo.SerialNumber } else { "" }
+    $os           = if ($SystemInfo.PSObject.Properties["OS"]) { $SystemInfo.OS } else { "" }
+    $cpu          = if ($SystemInfo.PSObject.Properties["CPU"]) { $SystemInfo.CPU } else { "" }
+    $ram          = if ($SystemInfo.PSObject.Properties["RAM_GB"]) { $SystemInfo.RAM_GB } else { "" }
+
+    $diskTotal = if ($SystemInfo.PSObject.Properties["Disk_Total_GB"]) {
+        $SystemInfo.Disk_Total_GB
+    } elseif ($SystemInfo.PSObject.Properties["DiskC_GB"]) {
+        $SystemInfo.DiskC_GB
+    } else {
+        ""
     }
 
-    Start-Sleep -Seconds 2
+    $diskFree = if ($SystemInfo.PSObject.Properties["Disk_Free_GB"]) {
+        $SystemInfo.Disk_Free_GB
+    } elseif ($SystemInfo.PSObject.Properties["FreeC_GB"]) {
+        $SystemInfo.FreeC_GB
+    } else {
+        ""
+    }
+
+    return [PSCustomObject]@{
+        Timestamp     = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        ComputerName  = $computerName
+        LoggedInUser  = $currentUser
+        Manufacturer  = $manufacturer
+        Model         = $model
+        SerialNumber  = $serial
+        OS            = $os
+        CPU           = $cpu
+        RAM_GB        = $ram
+        DiskC_GB      = $diskTotal
+        FreeC_GB      = $diskFree
+    }
 }
 
-function Start-RustDeskServiceAndUi {
+function Export-TNInventoryCsv {
+    param(
+        [Parameter(Mandatory = $true)]
+        $InventoryRecord
+    )
+
     try {
-        $svc = Get-Service -Name "rustdesk" -ErrorAction SilentlyContinue
-        if (-not $svc) {
-            $svc = Get-Service | Where-Object {
-                $_.Name -match "rustdesk" -or $_.DisplayName -match "RustDesk"
-            } | Select-Object -First 1
+        $inventoryRoot = "C:\TNUtility\inventory"
+
+        if (-not (Test-Path $inventoryRoot)) {
+            New-Item -Path $inventoryRoot -ItemType Directory -Force | Out-Null
         }
 
-        if ($svc) {
-            try {
-                Set-Service -Name $svc.Name -StartupType Automatic -ErrorAction SilentlyContinue
-            }
-            catch { }
+        $computerName = if ([string]::IsNullOrWhiteSpace($InventoryRecord.ComputerName)) { $env:COMPUTERNAME } else { $InventoryRecord.ComputerName }
+        $csvPath = Join-Path $inventoryRoot "$computerName`_inventory.csv"
 
-            Start-Service -Name $svc.Name -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 3
-            $svc.Refresh()
-            Write-TNLog "RustDesk service status: $($svc.Status)"
-        }
-        else {
-            Write-TNLog "RustDesk service not found after config."
-        }
+        $InventoryRecord | Export-Csv -Path $csvPath -NoTypeInformation -Encoding UTF8 -Force
+
+        Write-TNLog "Inventory CSV saved: $csvPath"
+        Write-Host "Inventory CSV saved: $csvPath" -ForegroundColor Green
     }
     catch {
-        Write-TNLog "RustDesk service start warning: $($_.Exception.Message)"
-    }
-
-    $exe = Get-RustDeskExePath
-    if ($exe) {
-        try {
-            Start-Process -FilePath $exe -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 4
-            Write-TNLog "RustDesk UI launched."
-        }
-        catch {
-            Write-TNLog "RustDesk UI launch warning: $($_.Exception.Message)"
-        }
+        Write-TNLog "CSV export failed: $($_.Exception.Message)"
+        Write-Host "CSV export failed: $($_.Exception.Message)" -ForegroundColor Red
     }
 }
 
-function Configure-RustDesk {
+function Update-TNMasterInventory {
     param(
-        [switch]$ForceReset
+        [Parameter(Mandatory = $true)]
+        $InventoryRecord
     )
 
-    Write-Host "================ RustDesk Config Phase ================" -ForegroundColor Magenta
-    Write-TNLog "================ RustDesk Config Phase ================"
+    try {
+        $inventoryRoot = "C:\TNUtility\inventory"
 
-    $RustDeskIdServer     = "remote.terranovamedical.ca"
-    $RustDeskRelayServer  = "remote.terranovamedical.ca"
-    $RustDeskApiServer    = ""
-    $RustDeskKey          = "tTkRtnG4bAu3ZeL7xtSgFMDHYID0Cngq4KHksTgzN0k="
-    $RustDeskConfigString = "==Qfi0zaw4kenR1crh0S0E3ZuNEMElUWIRUTGd2U0h3NMVmWzUXQiRzRuRnUrRFdiojI5V2aiwiIiojIpBXYiwiIhNmLsF2YpRWZtFmdv5WYyJXZ05SZ09WblJnI6ISehxWZyJCLiE2YuwWYjlGZl1WY29mbhJnclRnLlR3btVmciojI0N3boJye"
-
-    $exe = Get-RustDeskExePath
-    if (-not $exe) {
-        Write-Host "RustDesk executable not found. Skipping configuration." -ForegroundColor Red
-        Write-TNLog "RustDesk executable not found. Skipping configuration."
-        return
-    }
-
-    Write-Host "RustDesk executable found at: $exe" -ForegroundColor Green
-    Write-TNLog "RustDesk executable found at: $exe"
-
-    Stop-RustDeskAll
-
-    if ($ForceReset) {
-        Remove-RustDeskExistingConfig
-    }
-
-    $programDataConfig = "C:\ProgramData\RustDesk\config"
-    $userConfig        = Join-Path $env:APPDATA "RustDesk\config"
-
-    foreach ($cfgDir in @($programDataConfig, $userConfig)) {
-        if (!(Test-Path $cfgDir)) {
-            New-Item -ItemType Directory -Path $cfgDir -Force | Out-Null
+        if (-not (Test-Path $inventoryRoot)) {
+            New-Item -Path $inventoryRoot -ItemType Directory -Force | Out-Null
         }
-    }
 
-    $tomlContent = @"
-rendezvous_server = "$RustDeskIdServer"
-relay_server = "$RustDeskRelayServer"
-key = "$RustDeskKey"
-"@
+        $masterPath = Join-Path $inventoryRoot "MasterInventory.csv"
+        $masterData = @()
 
-    if ($RustDeskApiServer -and $RustDeskApiServer.Trim().Length -gt 0) {
-        $tomlContent += "`napi_server = `"$RustDeskApiServer`"`n"
-    }
-
-    $programToml = Join-Path $programDataConfig "RustDesk2.toml"
-    $userToml    = Join-Path $userConfig "RustDesk2.toml"
-
-    Set-Content -Path $programToml -Value $tomlContent -Encoding UTF8 -Force
-    Set-Content -Path $userToml -Value $tomlContent -Encoding UTF8 -Force
-
-    Write-Host "RustDesk TOML config written." -ForegroundColor Green
-    Write-TNLog "RustDesk TOML config written."
-
-    if ($RustDeskConfigString -and $RustDeskConfigString.Trim() -ne "") {
-        Write-Host "Applying RustDesk config string..." -ForegroundColor Cyan
-        Write-TNLog "Applying RustDesk config string..."
-
-        & $exe --config "$RustDeskConfigString"
-
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "RustDesk config-string imported successfully." -ForegroundColor Green
-            Write-TNLog "RustDesk config-string imported successfully."
+        if (Test-Path $masterPath) {
+            $masterData = Import-Csv -Path $masterPath
         }
-        else {
-            Write-Host "RustDesk config-string import returned non-zero exit code." -ForegroundColor Red
-            Write-TNLog "RustDesk config-string import returned non-zero exit code."
+
+        $serialNumber = "$($InventoryRecord.SerialNumber)".Trim()
+        $computerName = "$($InventoryRecord.ComputerName)".Trim()
+
+        $filteredData = @()
+
+        foreach ($row in $masterData) {
+            $sameSerial = $false
+            $sameComputer = $false
+
+            if (-not [string]::IsNullOrWhiteSpace($serialNumber) -and "$($row.SerialNumber)".Trim() -eq $serialNumber) {
+                $sameSerial = $true
+            }
+
+            if (-not [string]::IsNullOrWhiteSpace($computerName) -and "$($row.ComputerName)".Trim() -eq $computerName) {
+                $sameComputer = $true
+            }
+
+            if (-not ($sameSerial -or $sameComputer)) {
+                $filteredData += $row
+            }
         }
-    }
-    else {
-        Write-Host "RustDesk config string is empty. Skipping config-string import." -ForegroundColor Yellow
-        Write-TNLog "RustDesk config string is empty. Skipping config-string import."
-    }
 
-    Start-RustDeskServiceAndUi
+        $filteredData += $InventoryRecord
+        $filteredData | Export-Csv -Path $masterPath -NoTypeInformation -Encoding UTF8 -Force
 
-    Write-Host "RustDesk configuration phase completed." -ForegroundColor Magenta
-    Write-TNLog "RustDesk configuration phase completed."
+        Write-TNLog "Master inventory updated: $masterPath"
+        Write-Host "Master Inventory updated: $masterPath" -ForegroundColor Green
+    }
+    catch {
+        Write-TNLog "Master inventory update failed: $($_.Exception.Message)"
+        Write-Host "Master inventory update failed: $($_.Exception.Message)" -ForegroundColor Red
+    }
 }
+
+Initialize-TNEnvironment
+Write-TNLog "TNUtility started"
+
+# 1) Local Admin
+Ensure-LocalAdmin
+Write-TNLog "Local admin check completed"
+
+# 2) Apps
+Install-ChocolateyIfMissing
+Install-AppIfMissing "Google Chrome" "googlechrome" "C:\Program Files\Google\Chrome\Application\chrome.exe"
+Install-AppIfMissing "Firefox" "firefox" "C:\Program Files\Mozilla Firefox\firefox.exe"
+Install-AppIfMissing "Zoom" "zoom" "C:\Program Files\Zoom\bin\Zoom.exe"
+Install-AppIfMissing "7-Zip" "7zip.install" "C:\Program Files\7-Zip\7z.exe"
+Write-TNLog "Application deployment completed"
+
+# 3) RustDesk
+Write-Host "Deploying RustDesk..." -ForegroundColor Cyan
+Write-TNLog "Starting RustDesk deployment"
+
+Install-RustDeskIfMissing
+Start-Sleep -Seconds 5
+Configure-RustDesk -ForceReset:$ForceResetRustDesk
+
+Write-TNLog "RustDesk deployment completed"
+Write-Host "RustDesk deployment completed" -ForegroundColor Green
+
+# 4) Inventory
+$sys = Get-SystemInfo
+$sys | Format-List
+
+Save-SystemInventory $sys
+Write-TNLog "System inventory saved"
+
+$inventoryRecord = Convert-ToTNInventoryRecord -SystemInfo $sys
+Export-TNInventoryCsv -InventoryRecord $inventoryRecord
+Update-TNMasterInventory -InventoryRecord $inventoryRecord
+
+# 5) Cleanup
+Invoke-TempCleanup
+Write-TNLog "Temp cleanup completed"
+
+Write-TNLog "Deployment finished"
+Write-Host "Base deployment section completed." -ForegroundColor Green
