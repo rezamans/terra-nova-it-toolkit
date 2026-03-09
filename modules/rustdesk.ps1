@@ -24,7 +24,6 @@ function Get-RustDeskExePath {
 }
 
 function Install-RustDeskIfMissing {
-
     $existing = Get-RustDeskExePath
 
     if ($existing) {
@@ -58,7 +57,7 @@ function Install-RustDeskIfMissing {
         }
 
         $url = $asset.browser_download_url
-        $temp = "$env:TEMP\rustdesk_install.exe"
+        $temp = Join-Path $env:TEMP "rustdesk_install.exe"
 
         Write-Host "Downloading RustDesk..." -ForegroundColor Cyan
         Write-TNLog "Downloading RustDesk from $url"
