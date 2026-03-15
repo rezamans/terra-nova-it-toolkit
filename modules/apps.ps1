@@ -57,7 +57,7 @@ function Test-AppInstalled {
 
     try {
         $registry = Get-ItemProperty `
-            "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" ,
+            "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*", `
             "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" `
             -ErrorAction SilentlyContinue |
             Where-Object { $_.DisplayName -like "*$Name*" }
@@ -154,4 +154,48 @@ function Install-AppIfMissing {
         Write-TNLog "$Name installation error: $($_.Exception.Message)"
         return $false
     }
+}
+
+function Install-BaseApps {
+
+    Write-Host "Starting base application installation..." -ForegroundColor Cyan
+    Write-TNLog "Starting base application installation..."
+
+    if (-not (Install-ChocolateyIfMissing)) {
+        Write-Host "Chocolatey could not be installed. Aborting app installation." -ForegroundColor Red
+        Write-TNLog "Chocolatey could not be installed. Aborting app installation."
+        return $false
+    }
+
+    $apps = @(
+        @{ Name = "Google Chrome";   Package = "googlechrome"; ExePath = "C:\Program Files\Google\Chrome\Application\chrome.exe" },
+        @{ Name = "Mozilla Firefox"; Package = "firefox";      ExePath = "C:\Program Files\Mozilla Firefox\firefox.exe" },
+        @{ Name = "Zoom";            Package = "zoom";         ExePath = "C:\Program Files\Zoom\bin\Zoom.exe" },
+        @{ Name = "7-Zip";           Package = "7zip.install"; ExePath = "C:\Program Files\7-Zip\7zFM.exe" },
+        @{ Name = "PDFgear";         Package = "pdfgear";      ExePath = "C:\Program Files\PDFgear\PDFgear.exe" }
+    )
+
+    $overallSuccess = $true
+
+    foreach ($app in $apps) {
+        $result = Install-AppIfMissing `
+            -Name $app.Name `
+            -Package $app.Package `
+            -ExePath $app.ExePath
+
+        if (-not $result) {
+            $overallSuccess = $false
+        }
+    }
+
+    if ($overallSuccess) {
+        Write-Host "Base application installation completed successfully." -ForegroundColor Green
+        Write-TNLog "Base application installation completed successfully."
+    }
+    else {
+        Write-Host "Base application installation completed with errors." -ForegroundColor Yellow
+        Write-TNLog "Base application installation completed with errors."
+    }
+
+    return $overallSuccess
 }
