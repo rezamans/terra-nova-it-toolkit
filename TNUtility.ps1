@@ -1,199 +1,133 @@
-# TNUtility.ps1
-# Terra Nova IT Utility
-# Final version
+# ============================================
+# Terra Nova IT Utility - Main Orchestrator
+# ============================================
 
-[CmdletBinding()]
-param(
-    [switch]$ForceResetRustDesk
+$ErrorActionPreference = "Continue"
+
+# Base paths
+$script:TNRoot           = "C:\TNUtility"
+$script:TNModuleRoot     = Join-Path $script:TNRoot "modules"
+$script:TNInventoryRoot  = Join-Path $script:TNRoot "inventory"
+
+# Ensure directories exist
+New-Item -ItemType Directory -Path $script:TNRoot -Force | Out-Null
+New-Item -ItemType Directory -Path $script:TNModuleRoot -Force | Out-Null
+New-Item -ItemType Directory -Path $script:TNInventoryRoot -Force | Out-Null
+
+# Required modules
+$modules = @(
+    "logging.ps1",
+    "localadmin.ps1",
+    "apps.ps1",
+    "rustdesk.ps1",
+    "rustdesk-config.ps1",
+    "system-info.ps1",
+    "inventory.ps1",
+    "cleanup.ps1"
 )
 
-$ErrorActionPreference = 'Continue'
+# Load modules
+foreach ($module in $modules) {
 
-Write-Host "Terra Nova IT Utility Started..." -ForegroundColor Cyan
-Write-Host "Running by Reza Mansouri" -ForegroundColor Yellow
+    $modulePath = Join-Path $script:TNModuleRoot $module
 
-$repo = "https://raw.githubusercontent.com/rezamans/terra-nova-it-toolkit/main/modules"
-
-Write-Host "Loading modules..." -ForegroundColor Cyan
-
-irm "$repo/logging.ps1" | iex
-irm "$repo/localadmin.ps1" | iex
-irm "$repo/apps.ps1" | iex
-irm "$repo/rustdesk.ps1" | iex
-irm "$repo/rustdesk-config.ps1" | iex
-irm "$repo/system-info.ps1" | iex
-irm "$repo/inventory.ps1" | iex
-irm "$repo/cleanup.ps1" | iex
-
-Write-Host "Modules loaded." -ForegroundColor Green
-
-function Convert-ToTNInventoryRecord {
-    param(
-        [Parameter(Mandatory = $true)]
-        $SystemInfo
-    )
-
-    $computerName = if ($SystemInfo.PSObject.Properties["ComputerName"]) { $SystemInfo.ComputerName } else { $env:COMPUTERNAME }
-    $currentUser  = if ($SystemInfo.PSObject.Properties["CurrentUser"]) { $SystemInfo.CurrentUser } elseif ($SystemInfo.PSObject.Properties["LoggedInUser"]) { $SystemInfo.LoggedInUser } else { "$env:USERDOMAIN\$env:USERNAME" }
-    $manufacturer = if ($SystemInfo.PSObject.Properties["Manufacturer"]) { $SystemInfo.Manufacturer } else { "" }
-    $model        = if ($SystemInfo.PSObject.Properties["Model"]) { $SystemInfo.Model } else { "" }
-    $serial       = if ($SystemInfo.PSObject.Properties["SerialNumber"]) { $SystemInfo.SerialNumber } else { "" }
-    $os           = if ($SystemInfo.PSObject.Properties["OS"]) { $SystemInfo.OS } else { "" }
-    $cpu          = if ($SystemInfo.PSObject.Properties["CPU"]) { $SystemInfo.CPU } else { "" }
-    $ram          = if ($SystemInfo.PSObject.Properties["RAM_GB"]) { $SystemInfo.RAM_GB } else { "" }
-
-    $diskTotal = if ($SystemInfo.PSObject.Properties["Disk_Total_GB"]) {
-        $SystemInfo.Disk_Total_GB
-    } elseif ($SystemInfo.PSObject.Properties["DiskC_GB"]) {
-        $SystemInfo.DiskC_GB
-    } else {
-        ""
+    if (Test-Path $modulePath) {
+        . $modulePath
     }
-
-    $diskFree = if ($SystemInfo.PSObject.Properties["Disk_Free_GB"]) {
-        $SystemInfo.Disk_Free_GB
-    } elseif ($SystemInfo.PSObject.Properties["FreeC_GB"]) {
-        $SystemInfo.FreeC_GB
-    } else {
-        ""
-    }
-
-    return [PSCustomObject]@{
-        Timestamp     = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-        ComputerName  = $computerName
-        LoggedInUser  = $currentUser
-        Manufacturer  = $manufacturer
-        Model         = $model
-        SerialNumber  = $serial
-        OS            = $os
-        CPU           = $cpu
-        RAM_GB        = $ram
-        DiskC_GB      = $diskTotal
-        FreeC_GB      = $diskFree
+    else {
+        Write-Host "Required module not found: $modulePath" -ForegroundColor Red
+        exit 1
     }
 }
 
-function Export-TNInventoryCsv {
-    param(
-        [Parameter(Mandatory = $true)]
-        $InventoryRecord
-    )
+# Header
+Write-Host ""
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "   Terra Nova IT Utility Starting..." -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host ""
 
-    try {
-        $inventoryRoot = "C:\TNUtility\inventory"
+try {
 
-        if (-not (Test-Path $inventoryRoot)) {
-            New-Item -Path $inventoryRoot -ItemType Directory -Force | Out-Null
-        }
+    Write-TNLog "TNUtility started."
 
-        $computerName = if ([string]::IsNullOrWhiteSpace($InventoryRecord.ComputerName)) { $env:COMPUTERNAME } else { $InventoryRecord.ComputerName }
-        $csvPath = Join-Path $inventoryRoot "$computerName`_inventory.csv"
+    # ------------------------------------------------
+    # Step 1 - Ensure Local Admin
+    # ------------------------------------------------
+    Write-Host "Step 1: Checking local admin account..." -ForegroundColor Cyan
+    Write-TNLog "Step 1: Checking local admin account..."
+    Ensure-LocalAdmin
 
-        $InventoryRecord | Export-Csv -Path $csvPath -NoTypeInformation -Encoding UTF8 -Force
 
-        Write-TNLog "Inventory CSV saved: $csvPath"
-        Write-Host "Inventory CSV saved: $csvPath" -ForegroundColor Green
+    # ------------------------------------------------
+    # Step 2 - Install Base Applications
+    # ------------------------------------------------
+    Write-Host "Step 2: Installing base applications..." -ForegroundColor Cyan
+    Write-TNLog "Step 2: Installing base applications..."
+
+    $appsResult = Install-BaseApps
+
+    if (-not $appsResult) {
+        Write-Host "Base applications completed with some issues." -ForegroundColor Yellow
+        Write-TNLog "Base applications completed with some issues."
     }
-    catch {
-        Write-TNLog "CSV export failed: $($_.Exception.Message)"
-        Write-Host "CSV export failed: $($_.Exception.Message)" -ForegroundColor Red
-    }
+
+
+    # ------------------------------------------------
+    # Step 3 - Install RustDesk
+    # ------------------------------------------------
+    Write-Host "Step 3: Installing RustDesk..." -ForegroundColor Cyan
+    Write-TNLog "Step 3: Installing RustDesk..."
+    Install-RustDesk
+
+
+    # ------------------------------------------------
+    # Step 4 - Configure RustDesk
+    # ------------------------------------------------
+    Write-Host "Step 4: Configuring RustDesk..." -ForegroundColor Cyan
+    Write-TNLog "Step 4: Configuring RustDesk..."
+    Configure-RustDesk
+
+
+    # ------------------------------------------------
+    # Step 5 - Collect System Information
+    # ------------------------------------------------
+    Write-Host "Step 5: Collecting system information..." -ForegroundColor Cyan
+    Write-TNLog "Step 5: Collecting system information..."
+
+    $systemInfo = Get-SystemInfo
+
+
+    # ------------------------------------------------
+    # Step 6 - Save Inventory
+    # ------------------------------------------------
+    Write-Host "Step 6: Saving inventory..." -ForegroundColor Cyan
+    Write-TNLog "Step 6: Saving inventory..."
+
+    Save-Inventory -SystemInfo $systemInfo
+
+
+    # ------------------------------------------------
+    # Step 7 - Cleanup
+    # ------------------------------------------------
+    Write-Host "Step 7: Cleaning temporary files..." -ForegroundColor Cyan
+    Write-TNLog "Step 7: Cleaning temporary files..."
+
+    Invoke-Cleanup
+
+
+    # ------------------------------------------------
+    # Completed
+    # ------------------------------------------------
+    Write-Host ""
+    Write-Host "TNUtility completed successfully." -ForegroundColor Green
+    Write-TNLog "TNUtility completed successfully."
+
 }
+catch {
 
-function Update-TNMasterInventory {
-    param(
-        [Parameter(Mandatory = $true)]
-        $InventoryRecord
-    )
+    Write-Host "TNUtility failed: $($_.Exception.Message)" -ForegroundColor Red
+    Write-TNLog "TNUtility failed: $($_.Exception.Message)"
 
-    try {
-        $inventoryRoot = "C:\TNUtility\inventory"
-
-        if (-not (Test-Path $inventoryRoot)) {
-            New-Item -Path $inventoryRoot -ItemType Directory -Force | Out-Null
-        }
-
-        $masterPath = Join-Path $inventoryRoot "MasterInventory.csv"
-        $masterData = @()
-
-        if (Test-Path $masterPath) {
-            $masterData = Import-Csv -Path $masterPath
-        }
-
-        $serialNumber = "$($InventoryRecord.SerialNumber)".Trim()
-        $computerName = "$($InventoryRecord.ComputerName)".Trim()
-
-        $filteredData = @()
-
-        foreach ($row in $masterData) {
-            $sameSerial = $false
-            $sameComputer = $false
-
-            if (-not [string]::IsNullOrWhiteSpace($serialNumber) -and "$($row.SerialNumber)".Trim() -eq $serialNumber) {
-                $sameSerial = $true
-            }
-
-            if (-not [string]::IsNullOrWhiteSpace($computerName) -and "$($row.ComputerName)".Trim() -eq $computerName) {
-                $sameComputer = $true
-            }
-
-            if (-not ($sameSerial -or $sameComputer)) {
-                $filteredData += $row
-            }
-        }
-
-        $filteredData += $InventoryRecord
-        $filteredData | Export-Csv -Path $masterPath -NoTypeInformation -Encoding UTF8 -Force
-
-        Write-TNLog "Master inventory updated: $masterPath"
-        Write-Host "Master Inventory updated: $masterPath" -ForegroundColor Green
-    }
-    catch {
-        Write-TNLog "Master inventory update failed: $($_.Exception.Message)"
-        Write-Host "Master inventory update failed: $($_.Exception.Message)" -ForegroundColor Red
-    }
+    throw
 }
-
-Initialize-TNEnvironment
-Write-TNLog "TNUtility started"
-
-# 1) Local Admin
-Ensure-LocalAdmin
-Write-TNLog "Local admin check completed"
-
-# 2) Apps
-Install-ChocolateyIfMissing
-Install-AppIfMissing "Google Chrome" "googlechrome" "C:\Program Files\Google\Chrome\Application\chrome.exe"
-Install-AppIfMissing "Firefox" "firefox" "C:\Program Files\Mozilla Firefox\firefox.exe"
-Install-AppIfMissing "Zoom" "zoom" "C:\Program Files\Zoom\bin\Zoom.exe"
-Install-AppIfMissing "7-Zip" "7zip.install" "C:\Program Files\7-Zip\7z.exe"
-Write-TNLog "Application deployment completed"
-
-# 3) RustDesk
-Write-Host "Deploying RustDesk..." -ForegroundColor Cyan
-Write-TNLog "Starting RustDesk deployment"
-
-Install-RustDeskIfMissing
-Start-Sleep -Seconds 5
-Configure-RustDesk -ForceReset:$ForceResetRustDesk
-
-Write-TNLog "RustDesk deployment completed"
-Write-Host "RustDesk deployment completed" -ForegroundColor Green
-
-# 4) Inventory
-$sys = Get-SystemInfo
-$sys | Format-List
-
-Save-SystemInventory $sys
-Write-TNLog "System inventory saved"
-
-$inventoryRecord = Convert-ToTNInventoryRecord -SystemInfo $sys
-Export-TNInventoryCsv -InventoryRecord $inventoryRecord
-Update-TNMasterInventory -InventoryRecord $inventoryRecord
-
-# 5) Cleanup
-Invoke-TempCleanup
-Write-TNLog "Temp cleanup completed"
-
-Write-TNLog "Deployment finished"
-Write-Host "Base deployment section completed." -ForegroundColor Green
