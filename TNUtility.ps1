@@ -1,133 +1,123 @@
-# ============================================
-# Terra Nova IT Utility - Main Orchestrator
-# ============================================
+# TNUtility.ps1
+# Terra Nova IT Utility
+# Final Orchestrator Version
 
-$ErrorActionPreference = "Continue"
-
-# Base paths
-$script:TNRoot           = "C:\TNUtility"
-$script:TNModuleRoot     = Join-Path $script:TNRoot "modules"
-$script:TNInventoryRoot  = Join-Path $script:TNRoot "inventory"
-
-# Ensure directories exist
-New-Item -ItemType Directory -Path $script:TNRoot -Force | Out-Null
-New-Item -ItemType Directory -Path $script:TNModuleRoot -Force | Out-Null
-New-Item -ItemType Directory -Path $script:TNInventoryRoot -Force | Out-Null
-
-# Required modules
-$modules = @(
-    "logging.ps1",
-    "localadmin.ps1",
-    "apps.ps1",
-    "rustdesk.ps1",
-    "rustdesk-config.ps1",
-    "system-info.ps1",
-    "inventory.ps1",
-    "cleanup.ps1"
+[CmdletBinding()]
+param(
+    [switch]$ForceResetRustDesk
 )
 
-# Load modules
-foreach ($module in $modules) {
+$ErrorActionPreference = 'Continue'
 
-    $modulePath = Join-Path $script:TNModuleRoot $module
+Write-Host "Terra Nova IT Utility Started..." -ForegroundColor Cyan
+Write-Host "Running by Reza Mansouri" -ForegroundColor Yellow
 
-    if (Test-Path $modulePath) {
-        . $modulePath
-    }
-    else {
-        Write-Host "Required module not found: $modulePath" -ForegroundColor Red
-        exit 1
-    }
-}
+# =========================
+# Load Modules From GitHub
+# =========================
 
-# Header
-Write-Host ""
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "   Terra Nova IT Utility Starting..." -ForegroundColor Cyan
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host ""
+$repo = "https://raw.githubusercontent.com/rezamans/terra-nova-it-toolkit/main/modules"
 
-try {
+Write-Host "Loading modules..." -ForegroundColor Cyan
 
-    Write-TNLog "TNUtility started."
+irm "$repo/logging.ps1" | iex
+irm "$repo/localadmin.ps1" | iex
+irm "$repo/apps.ps1" | iex
+irm "$repo/rustdesk.ps1" | iex
+irm "$repo/rustdesk-config.ps1" | iex
+irm "$repo/system-info.ps1" | iex
+irm "$repo/inventory.ps1" | iex
+irm "$repo/cleanup.ps1" | iex
 
-    # ------------------------------------------------
-    # Step 1 - Ensure Local Admin
-    # ------------------------------------------------
-    Write-Host "Step 1: Checking local admin account..." -ForegroundColor Cyan
-    Write-TNLog "Step 1: Checking local admin account..."
-    Ensure-LocalAdmin
+Write-Host "Modules loaded." -ForegroundColor Green
 
+# =========================
+# Initialize Environment
+# =========================
 
-    # ------------------------------------------------
-    # Step 2 - Install Base Applications
-    # ------------------------------------------------
-    Write-Host "Step 2: Installing base applications..." -ForegroundColor Cyan
-    Write-TNLog "Step 2: Installing base applications..."
+Initialize-TNEnvironment
+Write-TNLog "TNUtility started"
 
-    $appsResult = Install-BaseApps
+# =========================
+# Local Admin Setup
+# =========================
 
-    if (-not $appsResult) {
-        Write-Host "Base applications completed with some issues." -ForegroundColor Yellow
-        Write-TNLog "Base applications completed with some issues."
-    }
+Write-Host "Checking local admin user..." -ForegroundColor Cyan
+Ensure-LocalAdmin
+Write-TNLog "Local admin check completed"
 
+# =========================
+# Chocolatey + Apps
+# =========================
 
-    # ------------------------------------------------
-    # Step 3 - Install RustDesk
-    # ------------------------------------------------
-    Write-Host "Step 3: Installing RustDesk..." -ForegroundColor Cyan
-    Write-TNLog "Step 3: Installing RustDesk..."
-    Install-RustDesk
+Write-Host "Checking Chocolatey..." -ForegroundColor Cyan
+$chocoOk = Install-ChocolateyIfMissing
 
+if (-not $chocoOk) {
 
-    # ------------------------------------------------
-    # Step 4 - Configure RustDesk
-    # ------------------------------------------------
-    Write-Host "Step 4: Configuring RustDesk..." -ForegroundColor Cyan
-    Write-TNLog "Step 4: Configuring RustDesk..."
-    Configure-RustDesk
-
-
-    # ------------------------------------------------
-    # Step 5 - Collect System Information
-    # ------------------------------------------------
-    Write-Host "Step 5: Collecting system information..." -ForegroundColor Cyan
-    Write-TNLog "Step 5: Collecting system information..."
-
-    $systemInfo = Get-SystemInfo
-
-
-    # ------------------------------------------------
-    # Step 6 - Save Inventory
-    # ------------------------------------------------
-    Write-Host "Step 6: Saving inventory..." -ForegroundColor Cyan
-    Write-TNLog "Step 6: Saving inventory..."
-
-    Save-Inventory -SystemInfo $systemInfo
-
-
-    # ------------------------------------------------
-    # Step 7 - Cleanup
-    # ------------------------------------------------
-    Write-Host "Step 7: Cleaning temporary files..." -ForegroundColor Cyan
-    Write-TNLog "Step 7: Cleaning temporary files..."
-
-    Invoke-Cleanup
-
-
-    # ------------------------------------------------
-    # Completed
-    # ------------------------------------------------
-    Write-Host ""
-    Write-Host "TNUtility completed successfully." -ForegroundColor Green
-    Write-TNLog "TNUtility completed successfully."
+    Write-TNLog "Chocolatey install/check failed. Skipping software deployment."
+    Write-Host "Chocolatey unavailable. Skipping app installation." -ForegroundColor Red
 
 }
-catch {
+else {
 
-    Write-Host "TNUtility failed: $($_.Exception.Message)" -ForegroundColor Red
-    Write-TNLog "TNUtility failed: $($_.Exception.Message)"
+    Install-AppIfMissing "Google Chrome" "googlechrome" "C:\Program Files\Google\Chrome\Application\chrome.exe"
+    Install-AppIfMissing "Firefox" "firefox" "C:\Program Files\Mozilla Firefox\firefox.exe"
+    Install-AppIfMissing "Zoom" "zoom" "C:\Program Files\Zoom\bin\Zoom.exe"
+    Install-AppIfMissing "7-Zip" "7zip.install" "C:\Program Files\7-Zip\7z.exe"
+    Install-AppIfMissing "PDFgear" "pdfgear" "C:\Program Files\PDFgear\PDFgear.exe"
 
-    throw
+    Write-TNLog "Application deployment completed"
+
 }
+
+# =========================
+# RustDesk Deployment
+# =========================
+
+Write-Host "Deploying RustDesk..." -ForegroundColor Cyan
+Write-TNLog "Starting RustDesk deployment"
+
+Install-RustDeskIfMissing
+
+Start-Sleep -Seconds 5
+
+Configure-RustDesk -ForceReset:$ForceResetRustDesk
+
+Write-TNLog "RustDesk deployment completed"
+Write-Host "RustDesk deployment completed." -ForegroundColor Green
+
+# =========================
+# Collect System Info
+# =========================
+
+Write-Host "Collecting system information..." -ForegroundColor Cyan
+
+$sys = Get-SystemInfo
+
+$sys | Format-List
+
+Write-TNLog "System information collected"
+
+# =========================
+# Save Inventory
+# =========================
+
+Save-SystemInventory $sys
+
+Write-TNLog "System inventory saved"
+
+# =========================
+# Cleanup
+# =========================
+
+Invoke-TempCleanup
+
+Write-TNLog "Temp cleanup completed"
+
+# =========================
+# Finish
+# =========================
+
+Write-TNLog "Deployment finished"
+Write-Host "Base deployment section completed." -ForegroundColor Green
