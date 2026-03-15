@@ -1,35 +1,68 @@
 # Terra Nova IT Utility
 
-Internal Windows Deployment & Inventory Utility for Terra Nova Medical Clinics.
+**Terra Nova IT Utility** is a modular PowerShell-based automation toolkit designed to provision and configure Windows workstations in multi-clinic environments.
 
-This tool standardizes the preparation and configuration of Windows systems across the organization.
+The utility automates software deployment, remote support configuration, system inventory collection, and workstation preparation for production use.
 
-It automatically installs approved software, configures remote support, and collects system inventory data for IT asset tracking.
-
----
-
-## Main Features
-
-- Automated Windows software deployment
-- Automatic creation of IT support local administrator
-- RustDesk installation and configuration for remote support
-- System inventory collection
-- CSV inventory export
-- Deployment logging
-- Temporary file cleanup
+This project was developed to streamline workstation setup across clinical locations and reduce manual IT deployment effort.
 
 ---
 
-## Standard Software Installed
+# Overview
 
-The utility automatically checks and installs the following applications if they are missing:
+Deploying and preparing Windows systems manually across multiple clinics can be time-consuming and inconsistent.
+
+Terra Nova IT Utility provides a centralized automation framework that ensures every workstation is configured in the same way using a single PowerShell command.
+
+The tool downloads its modules directly from the repository, allowing administrators to update the deployment logic centrally without needing to redistribute scripts.
+
+---
+
+# Key Features
+
+- Automated workstation provisioning
+- Chocolatey-based software deployment
+- Local administrator account validation
+- RustDesk remote support installation and configuration
+- Hardware and OS inventory collection
+- Automatic CSV asset inventory generation
+- Centralized master inventory tracking
+- Modular architecture for easy maintenance and expansion
+
+---
+
+# Software Deployment
+
+The utility installs or validates the presence of the following applications:
 
 - Google Chrome
 - Mozilla Firefox
 - Zoom
 - 7-Zip
+- PDFgear
+- RustDesk (Remote Support)
 
-Additional tools may be added in future updates.
+Applications are installed using **Chocolatey** and automatically skipped if already installed.
+
+---
+
+# System Inventory Collection
+
+The script collects detailed hardware and system information, including:
+
+- Computer Name
+- Logged-in User
+- Manufacturer
+- Model
+- Serial Number
+- Operating System
+- CPU
+- Installed RAM
+- Disk Capacity
+- Disk Free Space
+
+Inventory files are stored locally in:
+
 
 ---
 
