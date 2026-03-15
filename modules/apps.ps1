@@ -193,3 +193,16 @@ Write-TNLog "$Name installation error: $($_.Exception.Message)"
 }
 
 }
+
+# =========================
+# Install Base Apps
+# =========================
+function Install-BaseApps {
+
+Install-AppIfMissing "Google Chrome" "googlechrome" "C:\Program Files\Google\Chrome\Application\chrome.exe"
+Install-AppIfMissing "Firefox" "firefox" "C:\Program Files\Mozilla Firefox\firefox.exe"
+Install-AppIfMissing "Zoom" "zoom" "C:\Program Files\Zoom\bin\Zoom.exe"
+Install-AppIfMissing "7-Zip" "7zip.install" "C:\Program Files\7-Zip\7z.exe"
+Install-AppIfMissing "PDFgear" "pdfgear" "C:\Program Files\PDFgear\PDFgear.exe"
+
+}
