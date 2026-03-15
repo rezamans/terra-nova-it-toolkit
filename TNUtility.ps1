@@ -167,7 +167,14 @@ Install-AppIfMissing "Google Chrome" "googlechrome" "C:\Program Files\Google\Chr
 Install-AppIfMissing "Firefox" "firefox" "C:\Program Files\Mozilla Firefox\firefox.exe"
 Install-AppIfMissing "Zoom" "zoom" "C:\Program Files\Zoom\bin\Zoom.exe"
 Install-AppIfMissing "7-Zip" "7zip.install" "C:\Program Files\7-Zip\7z.exe"
-Install-AppIfMissing "PDFgear" "pdfgear" "C:\Program Files\PDFgear\PDFgear.exe"
+
+if (-not (Test-AppInstalled "PDFgear" "C:\Program Files\PDFgear\PDFgear.exe")) {
+    Install-AppIfMissing "PDFgear" "pdfgear" "C:\Program Files\PDFgear\PDFgear.exe"
+}
+else {
+    Write-Host "PDFgear already installed. Skipping..." -ForegroundColor Yellow
+}
+
 Write-TNLog "Application deployment completed"
 
 # 3) RustDesk
