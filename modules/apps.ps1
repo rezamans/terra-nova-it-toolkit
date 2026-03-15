@@ -1,208 +1,118 @@
-# apps.ps1
-# Terra Nova IT Utility - Application Management Module
+# TNUtility.ps1
+# Terra Nova IT Utility
+# Final Orchestrator Version
 
-# =========================
-# Install Chocolatey if missing
-# =========================
-function Install-ChocolateyIfMissing {
-
-    $chocoPath = "C:\ProgramData\chocolatey\bin\choco.exe"
-
-    Write-Host "Checking Chocolatey..." -ForegroundColor Cyan
-    Write-TNLog "Checking Chocolatey installation"
-
-    if (Test-Path $chocoPath) {
-
-        Write-Host "Chocolatey already installed." -ForegroundColor Yellow
-        Write-TNLog "Chocolatey already installed"
-        return $true
-
-    }
-
-    Write-Host "Chocolatey not found. Installing Chocolatey..." -ForegroundColor Cyan
-    Write-TNLog "Chocolatey not found. Starting installation"
-
-    try {
-
-        Set-ExecutionPolicy Bypass -Scope Process -Force
-
-        [System.Net.ServicePointManager]::SecurityProtocol = `
-        [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-
-        Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-
-        Start-Sleep -Seconds 5
-
-        if (Test-Path $chocoPath) {
-
-            Write-Host "Chocolatey installed successfully." -ForegroundColor Green
-            Write-TNLog "Chocolatey installation successful"
-
-            $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
-                        [System.Environment]::GetEnvironmentVariable("Path","User")
-
-            return $true
-
-        }
-        else {
-
-            Write-Host "Chocolatey installation failed." -ForegroundColor Red
-            Write-TNLog "Chocolatey installation failed"
-            return $false
-
-        }
-
-    }
-    catch {
-
-        Write-Host "Chocolatey install error: $($_.Exception.Message)" -ForegroundColor Red
-        Write-TNLog "Chocolatey install error: $($_.Exception.Message)"
-        return $false
-
-    }
-
-}
-
-# =========================
-# Detect installed application
-# =========================
-function Test-AppInstalled {
-
+[CmdletBinding()]
 param(
-[string]$Name,
-[string]$ExePath
+    [switch]$ForceResetRustDesk
 )
 
-$registry = Get-ItemProperty `
-HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* ,
-HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* `
--ErrorAction SilentlyContinue |
-Where-Object { $_.DisplayName -like "*$Name*" }
+$ErrorActionPreference = 'Continue'
 
-if ($registry) {
-    return $true
+Write-Host "Terra Nova IT Utility Started..." -ForegroundColor Cyan
+Write-Host "Running by Reza Mansouri" -ForegroundColor Yellow
+
+# =========================
+# Load Local Modules
+# =========================
+
+$modulePath = "C:\TNUtility\modules"
+
+Write-Host "Loading modules..." -ForegroundColor Cyan
+
+. "$modulePath\logging.ps1"
+. "$modulePath\localadmin.ps1"
+. "$modulePath\apps.ps1"
+. "$modulePath\rustdesk.ps1"
+. "$modulePath\rustdesk-config.ps1"
+. "$modulePath\system-info.ps1"
+. "$modulePath\inventory.ps1"
+. "$modulePath\cleanup.ps1"
+
+Write-Host "Modules loaded." -ForegroundColor Green
+
+# =========================
+# Initialize Environment
+# =========================
+
+Initialize-TNEnvironment
+Write-TNLog "TNUtility started"
+
+# =========================
+# Local Admin Setup
+# =========================
+
+Write-Host "Checking local admin user..." -ForegroundColor Cyan
+Ensure-LocalAdmin
+Write-TNLog "Local admin check completed"
+
+# =========================
+# Chocolatey + Apps
+# =========================
+
+Write-Host "Checking Chocolatey..." -ForegroundColor Cyan
+$chocoOk = Install-ChocolateyIfMissing
+
+if (-not $chocoOk) {
+
+    Write-TNLog "Chocolatey install/check failed. Skipping software deployment."
+    Write-Host "Chocolatey unavailable. Skipping app installation." -ForegroundColor Red
+
 }
+else {
 
-if ($ExePath) {
-    if (Test-Path $ExePath) {
-        return $true
-    }
-}
-
-return $false
+    Install-BaseApps
+    Write-TNLog "Application deployment completed"
 
 }
 
 # =========================
-# Check Chocolatey package
+# RustDesk Deployment
 # =========================
-function Test-ChocoPackageInstalled {
 
-param(
-[string]$Package
-)
+Write-Host "Deploying RustDesk..." -ForegroundColor Cyan
+Write-TNLog "Starting RustDesk deployment"
 
-$chocoPath = "C:\ProgramData\chocolatey\bin\choco.exe"
+Install-RustDeskIfMissing
 
-if (!(Test-Path $chocoPath)) {
-    return $false
-}
+Start-Sleep -Seconds 5
 
-try {
+Configure-RustDesk -ForceReset:$ForceResetRustDesk
 
-$result = & $chocoPath list --local-only --exact $Package 2>$null
-
-if ($result -match "^$Package") {
-    return $true
-}
-
-}
-catch {}
-
-return $false
-
-}
+Write-TNLog "RustDesk deployment completed"
+Write-Host "RustDesk deployment completed." -ForegroundColor Green
 
 # =========================
-# Install App if missing
+# Collect System Info
 # =========================
-function Install-AppIfMissing {
 
-param(
-[string]$Name,
-[string]$Package,
-[string]$ExePath
-)
+Write-Host "Collecting system information..." -ForegroundColor Cyan
 
-$chocoPath = "C:\ProgramData\chocolatey\bin\choco.exe"
+$sys = Get-SystemInfo
 
-if (Test-AppInstalled -Name $Name -ExePath $ExePath) {
+$sys | Format-List
 
-Write-Host "$Name already installed. Skipping..." -ForegroundColor Yellow
-Write-TNLog "$Name already installed"
-
-return
-
-}
-
-if (!(Test-Path $chocoPath)) {
-
-Write-Host "Chocolatey not available. Cannot install $Name." -ForegroundColor Red
-Write-TNLog "Chocolatey missing. Cannot install $Name"
-
-return
-
-}
-
-Write-Host "Installing $Name ..." -ForegroundColor Green
-Write-TNLog "Installing $Name"
-
-try {
-
-& $chocoPath install $Package -y --no-progress
-
-Start-Sleep -Seconds 3
-
-if (Test-AppInstalled -Name $Name -ExePath $ExePath) {
-
-Write-Host "$Name installed successfully." -ForegroundColor Green
-Write-TNLog "$Name installed successfully"
-
-return
-
-}
-
-if (Test-ChocoPackageInstalled $Package) {
-
-Write-Host "$Name installed via Chocolatey." -ForegroundColor Green
-Write-TNLog "$Name installed via Chocolatey"
-
-return
-
-}
-
-Write-Host "$Name installation could not be verified." -ForegroundColor Red
-Write-TNLog "$Name installation verification failed"
-
-}
-catch {
-
-Write-Host "$Name installation error: $($_.Exception.Message)" -ForegroundColor Red
-Write-TNLog "$Name installation error: $($_.Exception.Message)"
-
-}
-
-}
+Write-TNLog "System information collected"
 
 # =========================
-# Install Base Apps
+# Save Inventory
 # =========================
-function Install-BaseApps {
 
-Install-AppIfMissing "Google Chrome" "googlechrome" "C:\Program Files\Google\Chrome\Application\chrome.exe"
-Install-AppIfMissing "Firefox" "firefox" "C:\Program Files\Mozilla Firefox\firefox.exe"
-Install-AppIfMissing "Zoom" "zoom" "C:\Program Files\Zoom\bin\Zoom.exe"
-Install-AppIfMissing "7-Zip" "7zip.install" "C:\Program Files\7-Zip\7z.exe"
-Install-AppIfMissing "PDFgear" "pdfgear" "C:\Program Files\PDFgear\PDFgear.exe"
+Save-SystemInventory $sys
 
-}
+Write-TNLog "System inventory saved"
+
+# =========================
+# Cleanup
+# =========================
+
+Invoke-TempCleanup
+
+Write-TNLog "Temp cleanup completed"
+
+# =========================
+# Finish
+# =========================
+
+Write-TNLog "Deployment finished"
+Write-Host "Base deployment section completed." -ForegroundColor Green
