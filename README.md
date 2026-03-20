@@ -1,74 +1,57 @@
-# Terra Nova IT Utility
+# 🚀 Terra Nova IT Utility
+
+![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-5391FE?logo=powershell&logoColor=white)
+![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows&logoColor=white)
+![Automation](https://img.shields.io/badge/Automation-IT%20Deployment-green)
+![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen)
+![License](https://img.shields.io/badge/License-Internal-blue)
+
+---
 
 **Terra Nova IT Utility** is a modular PowerShell-based automation toolkit designed to provision and configure Windows workstations in multi-clinic environments.
 
-The utility automates software deployment, remote support configuration, system inventory collection, and workstation preparation for production use.
-
-This project was developed to streamline workstation setup across clinical locations and reduce manual IT deployment effort.
+> ⚡ Deploy a fully configured workstation with a single command
 
 ---
 
-# Overview
+## 🎯 Overview
 
-Deploying and preparing Windows systems manually across multiple clinics can be time-consuming and inconsistent.
+Managing workstation deployments across multiple locations can be:
+- ⏱️ time-consuming  
+- ❌ inconsistent  
+- 📉 hard to scale  
 
-Terra Nova IT Utility provides a centralized automation framework that ensures every workstation is configured in the same way using a single PowerShell command.
-
-The tool downloads its modules directly from the repository, allowing administrators to update the deployment logic centrally without needing to redistribute scripts.
-
----
-
-# Key Features
-
-- Automated workstation provisioning
-- Chocolatey-based software deployment
-- Local administrator account validation
-- RustDesk remote support installation and configuration
-- Hardware and OS inventory collection
-- Automatic CSV asset inventory generation
-- Centralized master inventory tracking
-- Modular architecture for easy maintenance and expansion
+This toolkit provides a **centralized, modular automation framework** to standardize and accelerate deployments.
 
 ---
 
-# Software Deployment
+## ⚙️ Key Features
 
-The utility installs or validates the presence of the following applications:
-
-- Google Chrome
-- Mozilla Firefox
-- Zoom
-- 7-Zip
-- PDFgear
-- RustDesk (Remote Support)
-
-Applications are installed using **Chocolatey** and automatically skipped if already installed.
-
----
-
-# System Inventory Collection
-
-The script collects detailed hardware and system information, including:
-
-- Computer Name
-- Logged-in User
-- Manufacturer
-- Model
-- Serial Number
-- Operating System
-- CPU
-- Installed RAM
-- Disk Capacity
-- Disk Free Space
-
-Inventory files are stored locally in:
-
+- 🚀 Automated workstation provisioning  
+- 🧩 Modular architecture (plug-and-play modules)  
+- 📦 Chocolatey-based application deployment  
+- 🔐 Local admin validation & enforcement  
+- 🖥️ RustDesk remote support setup  
+- 🖨️ SRFax printer driver automation (UI-handled)  
+- 🎬 K-Lite Codec Pack silent install  
+- 📊 System inventory collection  
+- 📁 CSV asset tracking (per-device + master)  
 
 ---
 
-## How to Run
+## 🧠 Architecture
 
-Open **PowerShell as Administrator** and run the following command:
-
-```powershell
-irm https://raw.githubusercontent.com/rezamans/terra-nova-it-toolkit/main/launcher.ps1 | iex
+```text
+TNUtility.ps1
+│
+├── modules/
+│   ├── logging.ps1
+│   ├── localadmin.ps1
+│   ├── apps.ps1
+│   ├── rustdesk.ps1
+│   ├── rustdesk-config.ps1
+│   ├── srfax.ps1
+│   ├── klite.ps1
+│   ├── system-info.ps1
+│   ├── inventory.ps1
+│   ├── cleanup.ps1
