@@ -193,10 +193,16 @@ Write-Host "RustDesk deployment completed" -ForegroundColor Green
 Write-Host "Deploying SRFax..." -ForegroundColor Cyan
 Write-TNLog "Starting SRFax deployment"
 
-Install-SRFaxIfMissing
+$srFaxInstalled = Install-SRFaxIfMissing
 
-Write-TNLog "SRFax deployment completed"
-Write-Host "SRFax deployment completed" -ForegroundColor Green
+if ($srFaxInstalled) {
+    Write-TNLog "SRFax deployment completed"
+    Write-Host "SRFax deployment completed" -ForegroundColor Green
+}
+else {
+    Write-TNLog "SRFax deployment failed"
+    Write-Host "SRFax deployment failed" -ForegroundColor Red
+}
 
 # 5) Inventory
 $sys = Get-SystemInfo
