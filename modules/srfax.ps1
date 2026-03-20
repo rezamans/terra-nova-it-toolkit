@@ -1,5 +1,6 @@
 # srfax.ps1
 # Terra Nova IT Utility - SRFax Printer Driver Module
+# Production-ready version using a stable internal/direct ZIP source
 
 function Test-SRFaxInstalled {
     param(
@@ -87,70 +88,36 @@ function Get-SRFaxInstaller {
     }
 }
 
-function Resolve-SRFaxDownloadUrl {
+function Get-SRFaxLocalZipFromDownloads {
     param(
-        [string]$DirectDownloadUrl = "https://secure.srfax.com/drivers/SRFaxPrinter.zip",
-        [string]$DownloadPageUrl   = "https://www.srfax.com/more/utilities-tools/srfax-printer-driver/"
+        [string]$Pattern = "srfax*.zip"
     )
 
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-    if (-not [string]::IsNullOrWhiteSpace($DirectDownloadUrl)) {
-        try {
-            Write-Host "Testing direct SRFax download URL..." -ForegroundColor Cyan
-            Write-TNLog "Testing direct SRFax download URL: $DirectDownloadUrl"
-
-            $headResponse = Invoke-WebRequest -Uri $DirectDownloadUrl -Method Head -UseBasicParsing -ErrorAction Stop
-
-            if ($headResponse.StatusCode -ge 200 -and $headResponse.StatusCode -lt 400) {
-                Write-TNLog "Direct SRFax download URL is valid."
-                return $DirectDownloadUrl
-            }
-        }
-        catch {
-            Write-TNLog "Direct SRFax download URL failed. Falling back to page parsing. Error: $($_.Exception.Message)"
-        }
-    }
-
     try {
-        Write-Host "Resolving SRFax download from webpage..." -ForegroundColor Cyan
-        Write-TNLog "Resolving SRFax download from webpage: $DownloadPageUrl"
+        $downloadsPath = Join-Path $env:USERPROFILE "Downloads"
 
-        $pageResponse = Invoke-WebRequest -Uri $DownloadPageUrl -UseBasicParsing -ErrorAction Stop
-
-        foreach ($link in $pageResponse.Links) {
-            if ($null -ne $link.href -and $link.href -match 'SRFaxPrinter\.zip') {
-                if ($link.href -match '^https?://') {
-                    Write-TNLog "Resolved SRFax download URL from page: $($link.href)"
-                    return $link.href
-                }
-                else {
-                    $baseUri = [System.Uri]$pageResponse.BaseResponse.ResponseUri
-                    $absoluteUri = [System.Uri]::new($baseUri, $link.href).AbsoluteUri
-                    Write-TNLog "Resolved SRFax download URL from page: $absoluteUri"
-                    return $absoluteUri
-                }
-            }
+        if (!(Test-Path $downloadsPath)) {
+            return $null
         }
 
-        $contentMatch = [regex]::Match($pageResponse.Content, '(https?://[^''"\s>]+SRFaxPrinter\.zip)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-        if ($contentMatch.Success) {
-            Write-TNLog "Resolved SRFax download URL from page content: $($contentMatch.Value)"
-            return $contentMatch.Value
-        }
+        $latestZip = Get-ChildItem -Path $downloadsPath -Filter $Pattern -File -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
 
-        throw "Could not find SRFaxPrinter.zip link on the SRFax page."
+        return $latestZip
     }
     catch {
-        Write-TNLog "Failed to resolve SRFax download URL from webpage: $($_.Exception.Message)"
-        throw
+        return $null
     }
 }
 
 function Install-SRFaxIfMissing {
     param(
-        [string]$DownloadUrl = "https://secure.srfax.com/drivers/SRFaxPrinter.zip",
-        [string]$DownloadPageUrl = "https://www.srfax.com/more/utilities-tools/srfax-printer-driver/",
+        # Best practice: replace this with your own direct internal URL
+        # Example:
+        # https://raw.githubusercontent.com/rezamans/terra-nova-it-toolkit/main/assets/SRFaxPrinter.zip
+        [string]$DownloadUrl = "",
+
         [string]$ZipName = "SRFaxPrinter.zip",
         [string]$ExtractFolderName = "SRFaxPrinter",
         [string]$InstallerName = "SRFaxPrinter.exe",
@@ -175,22 +142,49 @@ function Install-SRFaxIfMissing {
     $extractPath = Join-Path $tempRoot $ExtractFolderName
 
     try {
-        $resolvedDownloadUrl = Resolve-SRFaxDownloadUrl -DirectDownloadUrl $DownloadUrl -DownloadPageUrl $DownloadPageUrl
+        $downloaded = $false
 
-        Write-Host "Downloading SRFax Printer Driver..." -ForegroundColor Cyan
-        Write-TNLog "Downloading SRFax Printer Driver from $resolvedDownloadUrl"
+        if (-not [string]::IsNullOrWhiteSpace($DownloadUrl)) {
+            try {
+                Write-Host "Downloading SRFax Printer Driver from internal URL..." -ForegroundColor Cyan
+                Write-TNLog "Downloading SRFax Printer Driver from internal URL: $DownloadUrl"
 
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        Invoke-WebRequest -Uri $resolvedDownloadUrl -OutFile $zipPath -UseBasicParsing -ErrorAction Stop
+                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                Invoke-WebRequest -Uri $DownloadUrl -OutFile $zipPath -UseBasicParsing -MaximumRedirection 5 -ErrorAction Stop
 
-        if (!(Test-Path $zipPath)) {
-            Write-Host "SRFax download failed." -ForegroundColor Red
-            Write-TNLog "SRFax download failed."
-            return $false
+                if (Test-Path $zipPath) {
+                    $downloaded = $true
+                    Write-Host "SRFax package downloaded from internal URL." -ForegroundColor Green
+                    Write-TNLog "SRFax package downloaded from internal URL."
+                }
+            }
+            catch {
+                Write-TNLog "Internal SRFax download failed: $($_.Exception.Message)"
+            }
         }
 
-        Write-Host "SRFax package downloaded." -ForegroundColor Green
-        Write-TNLog "SRFax package downloaded."
+        if (-not $downloaded) {
+            Write-Host "Internal URL not available. Checking local Downloads folder..." -ForegroundColor Yellow
+            Write-TNLog "Internal URL not available. Checking local Downloads folder..."
+
+            $localZip = Get-SRFaxLocalZipFromDownloads
+
+            if (-not $localZip) {
+                Write-Host "SRFax ZIP not found. Please either set a direct internal DownloadUrl or manually download the SRFax ZIP to Downloads." -ForegroundColor Red
+                Write-TNLog "SRFax ZIP not found in Downloads and no usable direct DownloadUrl was available."
+                return $false
+            }
+
+            Copy-Item -Path $localZip.FullName -Destination $zipPath -Force
+            Write-Host "Using local SRFax ZIP: $($localZip.FullName)" -ForegroundColor Green
+            Write-TNLog "Using local SRFax ZIP: $($localZip.FullName)"
+        }
+
+        if (!(Test-Path $zipPath)) {
+            Write-Host "SRFax ZIP not available." -ForegroundColor Red
+            Write-TNLog "SRFax ZIP not available."
+            return $false
+        }
 
         if (Test-Path $extractPath) {
             Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
