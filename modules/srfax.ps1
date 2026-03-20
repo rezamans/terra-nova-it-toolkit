@@ -13,11 +13,11 @@ function Test-SRFaxInstalled {
     )
 
     try {
-        $registry = Get-ItemProperty `
-            "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" ,
-            "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" `
-            -ErrorAction SilentlyContinue |
-            Where-Object { $_.DisplayName -like "*$DisplayName*" }
+        $registry = Get-ItemProperty -Path @(
+            "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
+            "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+        ) -ErrorAction SilentlyContinue |
+        Where-Object { $_.DisplayName -like "*$DisplayName*" }
 
         if ($registry) {
             return $true
@@ -36,12 +36,43 @@ function Test-SRFaxInstalled {
     }
 }
 
+function Get-SRFaxInstaller {
+    param(
+        [Parameter(Mandatory)]
+        [string]$SearchRoot
+    )
+
+    try {
+        if (!(Test-Path $SearchRoot)) {
+            return $null
+        }
+
+        $candidates = Get-ChildItem -Path $SearchRoot -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Extension -ieq ".exe" -and (
+                    $_.Name -match '^srfax.*printer.*\.exe$' -or
+                    $_.Name -match '^srfax.*\.exe$' -or
+                    $_.BaseName -match 'srfax'
+                )
+            } |
+            Sort-Object FullName
+
+        if ($candidates) {
+            return $candidates | Select-Object -First 1
+        }
+
+        return $null
+    }
+    catch {
+        return $null
+    }
+}
+
 function Install-SRFaxIfMissing {
     param(
         [string]$DownloadUrl = "https://secure.srfax.com/drivers/SRFaxPrinter.zip",
         [string]$ZipName = "SRFaxPrinter.zip",
         [string]$ExtractFolderName = "SRFaxPrinter",
-        [string]$InstallerName = "SRFaxPrinter.exe",
         [string]$InstallerArgs = ""
     )
 
@@ -59,7 +90,7 @@ function Install-SRFaxIfMissing {
         New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
     }
 
-    $zipPath = Join-Path $tempRoot $ZipName
+    $zipPath     = Join-Path $tempRoot $ZipName
     $extractPath = Join-Path $tempRoot $ExtractFolderName
 
     try {
@@ -89,22 +120,25 @@ function Install-SRFaxIfMissing {
 
         Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
 
-        $installerPath = Join-Path $extractPath $InstallerName
+        $installer = Get-SRFaxInstaller -SearchRoot $extractPath
 
-        if (!(Test-Path $installerPath)) {
-            Write-Host "SRFax installer not found: $installerPath" -ForegroundColor Red
-            Write-TNLog "SRFax installer not found: $installerPath"
+        if (-not $installer) {
+            Write-Host "SRFax installer not found inside extracted folder." -ForegroundColor Red
+            Write-TNLog "SRFax installer not found inside extracted folder: $extractPath"
             return $false
         }
 
+        Write-Host "SRFax installer found: $($installer.FullName)" -ForegroundColor Green
+        Write-TNLog "SRFax installer found: $($installer.FullName)"
+
         Write-Host "Launching SRFax installer..." -ForegroundColor Cyan
-        Write-TNLog "Launching SRFax installer: $installerPath"
+        Write-TNLog "Launching SRFax installer: $($installer.FullName)"
 
         if ([string]::IsNullOrWhiteSpace($InstallerArgs)) {
-            Start-Process -FilePath $installerPath -Wait
+            Start-Process -FilePath $installer.FullName -Wait
         }
         else {
-            Start-Process -FilePath $installerPath -ArgumentList $InstallerArgs -Wait
+            Start-Process -FilePath $installer.FullName -ArgumentList $InstallerArgs -Wait
         }
 
         Start-Sleep -Seconds 5
