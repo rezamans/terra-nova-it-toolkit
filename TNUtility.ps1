@@ -1,207 +1,127 @@
-# TNUtility.ps1
-# Terra Nova IT Utility
-# Final version
+# srfax.ps1
+# Terra Nova IT Utility - SRFax Printer Driver Module
 
-[CmdletBinding()]
-param(
-    [switch]$ForceResetRustDesk
-)
-
-$ErrorActionPreference = 'Continue'
-
-Write-Host "Terra Nova IT Utility Started..." -ForegroundColor Cyan
-Write-Host "Running by Reza Mansouri" -ForegroundColor Yellow
-
-$repo = "https://raw.githubusercontent.com/rezamans/terra-nova-it-toolkit/main/modules"
-
-Write-Host "Loading modules..." -ForegroundColor Cyan
-
-irm "$repo/logging.ps1" | iex
-irm "$repo/localadmin.ps1" | iex
-irm "$repo/apps.ps1" | iex
-irm "$repo/rustdesk.ps1" | iex
-irm "$repo/rustdesk-config.ps1" | iex
-irm "$repo/system-info.ps1" | iex
-irm "$repo/inventory.ps1" | iex
-irm "$repo/cleanup.ps1" | iex
-
-Write-Host "Modules loaded." -ForegroundColor Green
-
-function Convert-ToTNInventoryRecord {
+function Test-SRFaxInstalled {
     param(
-        [Parameter(Mandatory = $true)]
-        $SystemInfo
-    )
-
-    $computerName = if ($SystemInfo.PSObject.Properties["ComputerName"]) { $SystemInfo.ComputerName } else { $env:COMPUTERNAME }
-    $currentUser  = if ($SystemInfo.PSObject.Properties["CurrentUser"]) { $SystemInfo.CurrentUser } elseif ($SystemInfo.PSObject.Properties["LoggedInUser"]) { $SystemInfo.LoggedInUser } else { "$env:USERDOMAIN\$env:USERNAME" }
-    $manufacturer = if ($SystemInfo.PSObject.Properties["Manufacturer"]) { $SystemInfo.Manufacturer } else { "" }
-    $model        = if ($SystemInfo.PSObject.Properties["Model"]) { $SystemInfo.Model } else { "" }
-    $serial       = if ($SystemInfo.PSObject.Properties["SerialNumber"]) { $SystemInfo.SerialNumber } else { "" }
-    $os           = if ($SystemInfo.PSObject.Properties["OS"]) { $SystemInfo.OS } else { "" }
-    $cpu          = if ($SystemInfo.PSObject.Properties["CPU"]) { $SystemInfo.CPU } else { "" }
-    $ram          = if ($SystemInfo.PSObject.Properties["RAM_GB"]) { $SystemInfo.RAM_GB } else { "" }
-
-    $diskTotal = if ($SystemInfo.PSObject.Properties["Disk_Total_GB"]) {
-        $SystemInfo.Disk_Total_GB
-    } elseif ($SystemInfo.PSObject.Properties["DiskC_GB"]) {
-        $SystemInfo.DiskC_GB
-    } else {
-        ""
-    }
-
-    $diskFree = if ($SystemInfo.PSObject.Properties["Disk_Free_GB"]) {
-        $SystemInfo.Disk_Free_GB
-    } elseif ($SystemInfo.PSObject.Properties["FreeC_GB"]) {
-        $SystemInfo.FreeC_GB
-    } else {
-        ""
-    }
-
-    return [PSCustomObject]@{
-        Timestamp     = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-        ComputerName  = $computerName
-        LoggedInUser  = $currentUser
-        Manufacturer  = $manufacturer
-        Model         = $model
-        SerialNumber  = $serial
-        OS            = $os
-        CPU           = $cpu
-        RAM_GB        = $ram
-        DiskC_GB      = $diskTotal
-        FreeC_GB      = $diskFree
-    }
-}
-
-function Export-TNInventoryCsv {
-    param(
-        [Parameter(Mandatory = $true)]
-        $InventoryRecord
+        [string]$DisplayName = "SRFax",
+        [string[]]$PossiblePaths = @(
+            "C:\Program Files\SRFax\SRFaxPrinter.exe",
+            "C:\Program Files (x86)\SRFax\SRFaxPrinter.exe",
+            "C:\Program Files\SRFax\SRFax.exe",
+            "C:\Program Files (x86)\SRFax\SRFax.exe"
+        )
     )
 
     try {
-        $inventoryRoot = "C:\TNUtility\inventory"
+        $registry = Get-ItemProperty `
+            "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" ,
+            "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" `
+            -ErrorAction SilentlyContinue |
+            Where-Object { $_.DisplayName -like "*$DisplayName*" }
 
-        if (-not (Test-Path $inventoryRoot)) {
-            New-Item -Path $inventoryRoot -ItemType Directory -Force | Out-Null
+        if ($registry) {
+            return $true
         }
 
-        $computerName = if ([string]::IsNullOrWhiteSpace($InventoryRecord.ComputerName)) { $env:COMPUTERNAME } else { $InventoryRecord.ComputerName }
-        $csvPath = Join-Path $inventoryRoot "$computerName`_inventory.csv"
+        foreach ($path in $PossiblePaths) {
+            if (Test-Path $path) {
+                return $true
+            }
+        }
 
-        $InventoryRecord | Export-Csv -Path $csvPath -NoTypeInformation -Encoding UTF8 -Force
-
-        Write-TNLog "Inventory CSV saved: $csvPath"
-        Write-Host "Inventory CSV saved: $csvPath" -ForegroundColor Green
+        return $false
     }
     catch {
-        Write-TNLog "CSV export failed: $($_.Exception.Message)"
-        Write-Host "CSV export failed: $($_.Exception.Message)" -ForegroundColor Red
+        return $false
     }
 }
 
-function Update-TNMasterInventory {
+function Install-SRFaxIfMissing {
     param(
-        [Parameter(Mandatory = $true)]
-        $InventoryRecord
+        [string]$DownloadUrl = "https://secure.srfax.com/drivers/SRFaxPrinter.zip",
+        [string]$ZipName = "SRFaxPrinter.zip",
+        [string]$ExtractFolderName = "SRFaxPrinter",
+        [string]$InstallerName = "SRFaxPrinter.exe",
+        [string]$InstallerArgs = ""
     )
 
+    Write-Host "Checking SRFax..." -ForegroundColor Cyan
+    Write-TNLog "Checking SRFax..."
+
+    if (Test-SRFaxInstalled) {
+        Write-Host "SRFax already installed. Skipping..." -ForegroundColor Yellow
+        Write-TNLog "SRFax already installed. Skipping..."
+        return $true
+    }
+
+    $tempRoot = "C:\TNUtility\temp"
+    if (!(Test-Path $tempRoot)) {
+        New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
+    }
+
+    $zipPath = Join-Path $tempRoot $ZipName
+    $extractPath = Join-Path $tempRoot $ExtractFolderName
+
     try {
-        $inventoryRoot = "C:\TNUtility\inventory"
+        Write-Host "Downloading SRFax Printer Driver..." -ForegroundColor Cyan
+        Write-TNLog "Downloading SRFax Printer Driver from $DownloadUrl"
 
-        if (-not (Test-Path $inventoryRoot)) {
-            New-Item -Path $inventoryRoot -ItemType Directory -Force | Out-Null
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri $DownloadUrl -OutFile $zipPath -UseBasicParsing
+
+        if (!(Test-Path $zipPath)) {
+            Write-Host "SRFax download failed." -ForegroundColor Red
+            Write-TNLog "SRFax download failed."
+            return $false
         }
 
-        $masterPath = Join-Path $inventoryRoot "MasterInventory.csv"
-        $masterData = @()
+        Write-Host "SRFax package downloaded." -ForegroundColor Green
+        Write-TNLog "SRFax package downloaded."
 
-        if (Test-Path $masterPath) {
-            $masterData = Import-Csv -Path $masterPath
+        if (Test-Path $extractPath) {
+            Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
         }
 
-        $serialNumber = "$($InventoryRecord.SerialNumber)".Trim()
-        $computerName = "$($InventoryRecord.ComputerName)".Trim()
+        New-Item -ItemType Directory -Path $extractPath -Force | Out-Null
 
-        $filteredData = @()
+        Write-Host "Extracting SRFax package..." -ForegroundColor Cyan
+        Write-TNLog "Extracting SRFax package to $extractPath"
 
-        foreach ($row in $masterData) {
-            $sameSerial = $false
-            $sameComputer = $false
+        Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
 
-            if (-not [string]::IsNullOrWhiteSpace($serialNumber) -and "$($row.SerialNumber)".Trim() -eq $serialNumber) {
-                $sameSerial = $true
-            }
+        $installerPath = Join-Path $extractPath $InstallerName
 
-            if (-not [string]::IsNullOrWhiteSpace($computerName) -and "$($row.ComputerName)".Trim() -eq $computerName) {
-                $sameComputer = $true
-            }
-
-            if (-not ($sameSerial -or $sameComputer)) {
-                $filteredData += $row
-            }
+        if (!(Test-Path $installerPath)) {
+            Write-Host "SRFax installer not found: $installerPath" -ForegroundColor Red
+            Write-TNLog "SRFax installer not found: $installerPath"
+            return $false
         }
 
-        $filteredData += $InventoryRecord
-        $filteredData | Export-Csv -Path $masterPath -NoTypeInformation -Encoding UTF8 -Force
+        Write-Host "Launching SRFax installer..." -ForegroundColor Cyan
+        Write-TNLog "Launching SRFax installer: $installerPath"
 
-        Write-TNLog "Master inventory updated: $masterPath"
-        Write-Host "Master Inventory updated: $masterPath" -ForegroundColor Green
+        if ([string]::IsNullOrWhiteSpace($InstallerArgs)) {
+            Start-Process -FilePath $installerPath -Wait
+        }
+        else {
+            Start-Process -FilePath $installerPath -ArgumentList $InstallerArgs -Wait
+        }
+
+        Start-Sleep -Seconds 5
+
+        if (Test-SRFaxInstalled) {
+            Write-Host "SRFax installed successfully." -ForegroundColor Green
+            Write-TNLog "SRFax installed successfully."
+            return $true
+        }
+
+        Write-Host "SRFax install finished, but validation failed." -ForegroundColor Red
+        Write-TNLog "SRFax install finished, but validation failed."
+        return $false
     }
     catch {
-        Write-TNLog "Master inventory update failed: $($_.Exception.Message)"
-        Write-Host "Master inventory update failed: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "SRFax installation error: $($_.Exception.Message)" -ForegroundColor Red
+        Write-TNLog "SRFax installation error: $($_.Exception.Message)"
+        return $false
     }
 }
-
-Initialize-TNEnvironment
-Write-TNLog "TNUtility started"
-
-# 1) Local Admin
-Ensure-LocalAdmin
-Write-TNLog "Local admin check completed"
-
-# 2) Apps
-Install-ChocolateyIfMissing
-Install-AppIfMissing "Google Chrome" "googlechrome" "C:\Program Files\Google\Chrome\Application\chrome.exe"
-Install-AppIfMissing "Firefox" "firefox" "C:\Program Files\Mozilla Firefox\firefox.exe"
-Install-AppIfMissing "Zoom" "zoom" "C:\Program Files\Zoom\bin\Zoom.exe"
-Install-AppIfMissing "7-Zip" "7zip.install" "C:\Program Files\7-Zip\7z.exe"
-
-if (-not (Test-AppInstalled "PDFgear" "C:\Program Files\PDFgear\PDFgear.exe")) {
-    Install-AppIfMissing "PDFgear" "pdfgear" "C:\Program Files\PDFgear\PDFgear.exe"
-}
-else {
-    Write-Host "PDFgear already installed. Skipping..." -ForegroundColor Yellow
-}
-
-Write-TNLog "Application deployment completed"
-
-# 3) RustDesk
-Write-Host "Deploying RustDesk..." -ForegroundColor Cyan
-Write-TNLog "Starting RustDesk deployment"
-
-Install-RustDeskIfMissing
-Start-Sleep -Seconds 5
-Configure-RustDesk -ForceReset:$ForceResetRustDesk
-
-Write-TNLog "RustDesk deployment completed"
-Write-Host "RustDesk deployment completed" -ForegroundColor Green
-
-# 4) Inventory
-$sys = Get-SystemInfo
-$sys | Format-List
-
-Save-SystemInventory $sys
-Write-TNLog "System inventory saved"
-
-$inventoryRecord = Convert-ToTNInventoryRecord -SystemInfo $sys
-Export-TNInventoryCsv -InventoryRecord $inventoryRecord
-Update-TNMasterInventory -InventoryRecord $inventoryRecord
-
-# 5) Cleanup
-Invoke-TempCleanup
-Write-TNLog "Temp cleanup completed"
-
-Write-TNLog "Deployment finished"
-Write-Host "Base deployment section completed." -ForegroundColor Green
