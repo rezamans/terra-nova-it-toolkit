@@ -39,7 +39,9 @@ function Test-SRFaxInstalled {
 function Get-SRFaxInstaller {
     param(
         [Parameter(Mandatory)]
-        [string]$SearchRoot
+        [string]$SearchRoot,
+
+        [string]$PreferredInstallerName = "SRFaxPrinter.exe"
     )
 
     try {
@@ -47,18 +49,35 @@ function Get-SRFaxInstaller {
             return $null
         }
 
-        $candidates = Get-ChildItem -Path $SearchRoot -Recurse -File -ErrorAction SilentlyContinue |
-            Where-Object {
-                $_.Extension -ieq ".exe" -and (
-                    $_.Name -match '^srfax.*printer.*\.exe$' -or
-                    $_.Name -match '^srfax.*\.exe$' -or
-                    $_.BaseName -match 'srfax'
-                )
-            } |
+        $allExeFiles = Get-ChildItem -Path $SearchRoot -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -ieq ".exe" }
+
+        if (-not $allExeFiles) {
+            return $null
+        }
+
+        $preferredMatch = $allExeFiles |
+            Where-Object { $_.Name -ieq $PreferredInstallerName } |
+            Select-Object -First 1
+
+        if ($preferredMatch) {
+            return $preferredMatch
+        }
+
+        $strongCandidates = $allExeFiles |
+            Where-Object { $_.Name -match '^srfax.*printer.*\.exe$' } |
             Sort-Object FullName
 
-        if ($candidates) {
-            return $candidates | Select-Object -First 1
+        if ($strongCandidates) {
+            return $strongCandidates | Select-Object -First 1
+        }
+
+        $fallbackCandidates = $allExeFiles |
+            Where-Object { $_.BaseName -match 'srfax' } |
+            Sort-Object FullName
+
+        if ($fallbackCandidates) {
+            return $fallbackCandidates | Select-Object -First 1
         }
 
         return $null
@@ -68,11 +87,73 @@ function Get-SRFaxInstaller {
     }
 }
 
+function Resolve-SRFaxDownloadUrl {
+    param(
+        [string]$DirectDownloadUrl = "https://secure.srfax.com/drivers/SRFaxPrinter.zip",
+        [string]$DownloadPageUrl   = "https://www.srfax.com/more/utilities-tools/srfax-printer-driver/"
+    )
+
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+    if (-not [string]::IsNullOrWhiteSpace($DirectDownloadUrl)) {
+        try {
+            Write-Host "Testing direct SRFax download URL..." -ForegroundColor Cyan
+            Write-TNLog "Testing direct SRFax download URL: $DirectDownloadUrl"
+
+            $headResponse = Invoke-WebRequest -Uri $DirectDownloadUrl -Method Head -UseBasicParsing -ErrorAction Stop
+
+            if ($headResponse.StatusCode -ge 200 -and $headResponse.StatusCode -lt 400) {
+                Write-TNLog "Direct SRFax download URL is valid."
+                return $DirectDownloadUrl
+            }
+        }
+        catch {
+            Write-TNLog "Direct SRFax download URL failed. Falling back to page parsing. Error: $($_.Exception.Message)"
+        }
+    }
+
+    try {
+        Write-Host "Resolving SRFax download from webpage..." -ForegroundColor Cyan
+        Write-TNLog "Resolving SRFax download from webpage: $DownloadPageUrl"
+
+        $pageResponse = Invoke-WebRequest -Uri $DownloadPageUrl -UseBasicParsing -ErrorAction Stop
+
+        foreach ($link in $pageResponse.Links) {
+            if ($null -ne $link.href -and $link.href -match 'SRFaxPrinter\.zip') {
+                if ($link.href -match '^https?://') {
+                    Write-TNLog "Resolved SRFax download URL from page: $($link.href)"
+                    return $link.href
+                }
+                else {
+                    $baseUri = [System.Uri]$pageResponse.BaseResponse.ResponseUri
+                    $absoluteUri = [System.Uri]::new($baseUri, $link.href).AbsoluteUri
+                    Write-TNLog "Resolved SRFax download URL from page: $absoluteUri"
+                    return $absoluteUri
+                }
+            }
+        }
+
+        $contentMatch = [regex]::Match($pageResponse.Content, '(https?://[^''"\s>]+SRFaxPrinter\.zip)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        if ($contentMatch.Success) {
+            Write-TNLog "Resolved SRFax download URL from page content: $($contentMatch.Value)"
+            return $contentMatch.Value
+        }
+
+        throw "Could not find SRFaxPrinter.zip link on the SRFax page."
+    }
+    catch {
+        Write-TNLog "Failed to resolve SRFax download URL from webpage: $($_.Exception.Message)"
+        throw
+    }
+}
+
 function Install-SRFaxIfMissing {
     param(
         [string]$DownloadUrl = "https://secure.srfax.com/drivers/SRFaxPrinter.zip",
+        [string]$DownloadPageUrl = "https://www.srfax.com/more/utilities-tools/srfax-printer-driver/",
         [string]$ZipName = "SRFaxPrinter.zip",
         [string]$ExtractFolderName = "SRFaxPrinter",
+        [string]$InstallerName = "SRFaxPrinter.exe",
         [string]$InstallerArgs = ""
     )
 
@@ -90,15 +171,17 @@ function Install-SRFaxIfMissing {
         New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
     }
 
-    $zipPath     = Join-Path $tempRoot $ZipName
+    $zipPath = Join-Path $tempRoot $ZipName
     $extractPath = Join-Path $tempRoot $ExtractFolderName
 
     try {
+        $resolvedDownloadUrl = Resolve-SRFaxDownloadUrl -DirectDownloadUrl $DownloadUrl -DownloadPageUrl $DownloadPageUrl
+
         Write-Host "Downloading SRFax Printer Driver..." -ForegroundColor Cyan
-        Write-TNLog "Downloading SRFax Printer Driver from $DownloadUrl"
+        Write-TNLog "Downloading SRFax Printer Driver from $resolvedDownloadUrl"
 
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        Invoke-WebRequest -Uri $DownloadUrl -OutFile $zipPath -UseBasicParsing
+        Invoke-WebRequest -Uri $resolvedDownloadUrl -OutFile $zipPath -UseBasicParsing -ErrorAction Stop
 
         if (!(Test-Path $zipPath)) {
             Write-Host "SRFax download failed." -ForegroundColor Red
@@ -120,7 +203,7 @@ function Install-SRFaxIfMissing {
 
         Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
 
-        $installer = Get-SRFaxInstaller -SearchRoot $extractPath
+        $installer = Get-SRFaxInstaller -SearchRoot $extractPath -PreferredInstallerName $InstallerName
 
         if (-not $installer) {
             Write-Host "SRFax installer not found inside extracted folder." -ForegroundColor Red
