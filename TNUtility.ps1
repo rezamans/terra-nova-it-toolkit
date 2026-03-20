@@ -1,6 +1,6 @@
 # TNUtility.ps1
 # Terra Nova IT Utility
-# Final version
+# Final version (SRFax Enterprise + Stable)
 
 [CmdletBinding()]
 param(
@@ -28,196 +28,111 @@ irm "$repo/cleanup.ps1" | iex
 
 Write-Host "Modules loaded." -ForegroundColor Green
 
+# =========================
+# Inventory Helpers
+# =========================
+
 function Convert-ToTNInventoryRecord {
     param(
         [Parameter(Mandatory = $true)]
         $SystemInfo
     )
 
-    $computerName = if ($SystemInfo.PSObject.Properties["ComputerName"]) { $SystemInfo.ComputerName } else { $env:COMPUTERNAME }
-    $currentUser  = if ($SystemInfo.PSObject.Properties["CurrentUser"]) { $SystemInfo.CurrentUser } elseif ($SystemInfo.PSObject.Properties["LoggedInUser"]) { $SystemInfo.LoggedInUser } else { "$env:USERDOMAIN\$env:USERNAME" }
-    $manufacturer = if ($SystemInfo.PSObject.Properties["Manufacturer"]) { $SystemInfo.Manufacturer } else { "" }
-    $model        = if ($SystemInfo.PSObject.Properties["Model"]) { $SystemInfo.Model } else { "" }
-    $serial       = if ($SystemInfo.PSObject.Properties["SerialNumber"]) { $SystemInfo.SerialNumber } else { "" }
-    $os           = if ($SystemInfo.PSObject.Properties["OS"]) { $SystemInfo.OS } else { "" }
-    $cpu          = if ($SystemInfo.PSObject.Properties["CPU"]) { $SystemInfo.CPU } else { "" }
-    $ram          = if ($SystemInfo.PSObject.Properties["RAM_GB"]) { $SystemInfo.RAM_GB } else { "" }
-
-    $diskTotal = if ($SystemInfo.PSObject.Properties["Disk_Total_GB"]) {
-        $SystemInfo.Disk_Total_GB
-    } elseif ($SystemInfo.PSObject.Properties["DiskC_GB"]) {
-        $SystemInfo.DiskC_GB
-    } else {
-        ""
-    }
-
-    $diskFree = if ($SystemInfo.PSObject.Properties["Disk_Free_GB"]) {
-        $SystemInfo.Disk_Free_GB
-    } elseif ($SystemInfo.PSObject.Properties["FreeC_GB"]) {
-        $SystemInfo.FreeC_GB
-    } else {
-        ""
-    }
-
     return [PSCustomObject]@{
         Timestamp     = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-        ComputerName  = $computerName
-        LoggedInUser  = $currentUser
-        Manufacturer  = $manufacturer
-        Model         = $model
-        SerialNumber  = $serial
-        OS            = $os
-        CPU           = $cpu
-        RAM_GB        = $ram
-        DiskC_GB      = $diskTotal
-        FreeC_GB      = $diskFree
+        ComputerName  = $SystemInfo.ComputerName
+        LoggedInUser  = $SystemInfo.LoggedInUser
+        Manufacturer  = $SystemInfo.Manufacturer
+        Model         = $SystemInfo.Model
+        SerialNumber  = $SystemInfo.SerialNumber
+        OS            = $SystemInfo.OS
+        CPU           = $SystemInfo.CPU
+        RAM_GB        = $SystemInfo.RAM_GB
+        DiskC_GB      = $SystemInfo.Disk_Total_GB
+        FreeC_GB      = $SystemInfo.Disk_Free_GB
     }
 }
 
 function Export-TNInventoryCsv {
-    param(
-        [Parameter(Mandatory = $true)]
-        $InventoryRecord
-    )
+    param($InventoryRecord)
 
-    try {
-        $inventoryRoot = "C:\TNUtility\inventory"
+    $path = "C:\TNUtility\inventory"
+    New-Item -ItemType Directory -Path $path -Force | Out-Null
 
-        if (-not (Test-Path $inventoryRoot)) {
-            New-Item -Path $inventoryRoot -ItemType Directory -Force | Out-Null
-        }
+    $file = "$path\$env:COMPUTERNAME`_inventory.csv"
+    $InventoryRecord | Export-Csv -Path $file -NoTypeInformation -Encoding UTF8 -Force
 
-        $computerName = if ([string]::IsNullOrWhiteSpace($InventoryRecord.ComputerName)) { $env:COMPUTERNAME } else { $InventoryRecord.ComputerName }
-        $csvPath = Join-Path $inventoryRoot "$computerName`_inventory.csv"
-
-        $InventoryRecord | Export-Csv -Path $csvPath -NoTypeInformation -Encoding UTF8 -Force
-
-        Write-TNLog "Inventory CSV saved: $csvPath"
-        Write-Host "Inventory CSV saved: $csvPath" -ForegroundColor Green
-    }
-    catch {
-        Write-TNLog "CSV export failed: $($_.Exception.Message)"
-        Write-Host "CSV export failed: $($_.Exception.Message)" -ForegroundColor Red
-    }
+    Write-Host "Inventory saved: $file" -ForegroundColor Green
 }
 
 function Update-TNMasterInventory {
-    param(
-        [Parameter(Mandatory = $true)]
-        $InventoryRecord
-    )
+    param($InventoryRecord)
 
-    try {
-        $inventoryRoot = "C:\TNUtility\inventory"
+    $path = "C:\TNUtility\inventory\MasterInventory.csv"
 
-        if (-not (Test-Path $inventoryRoot)) {
-            New-Item -Path $inventoryRoot -ItemType Directory -Force | Out-Null
-        }
-
-        $masterPath = Join-Path $inventoryRoot "MasterInventory.csv"
-        $masterData = @()
-
-        if (Test-Path $masterPath) {
-            $masterData = Import-Csv -Path $masterPath
-        }
-
-        $serialNumber = "$($InventoryRecord.SerialNumber)".Trim()
-        $computerName = "$($InventoryRecord.ComputerName)".Trim()
-
-        $filteredData = @()
-
-        foreach ($row in $masterData) {
-            $sameSerial = $false
-            $sameComputer = $false
-
-            if (-not [string]::IsNullOrWhiteSpace($serialNumber) -and "$($row.SerialNumber)".Trim() -eq $serialNumber) {
-                $sameSerial = $true
-            }
-
-            if (-not [string]::IsNullOrWhiteSpace($computerName) -and "$($row.ComputerName)".Trim() -eq $computerName) {
-                $sameComputer = $true
-            }
-
-            if (-not ($sameSerial -or $sameComputer)) {
-                $filteredData += $row
-            }
-        }
-
-        $filteredData += $InventoryRecord
-        $filteredData | Export-Csv -Path $masterPath -NoTypeInformation -Encoding UTF8 -Force
-
-        Write-TNLog "Master inventory updated: $masterPath"
-        Write-Host "Master Inventory updated: $masterPath" -ForegroundColor Green
+    if (Test-Path $path) {
+        $data = Import-Csv $path
+        $data = $data | Where-Object { $_.ComputerName -ne $InventoryRecord.ComputerName }
+        $data += $InventoryRecord
+    } else {
+        $data = @($InventoryRecord)
     }
-    catch {
-        Write-TNLog "Master inventory update failed: $($_.Exception.Message)"
-        Write-Host "Master inventory update failed: $($_.Exception.Message)" -ForegroundColor Red
-    }
+
+    $data | Export-Csv -Path $path -NoTypeInformation -Encoding UTF8 -Force
+    Write-Host "Master inventory updated" -ForegroundColor Green
 }
+
+# =========================
+# START
+# =========================
 
 Initialize-TNEnvironment
 Write-TNLog "TNUtility started"
 
 # 1) Local Admin
 Ensure-LocalAdmin
-Write-TNLog "Local admin check completed"
+Write-TNLog "Local admin done"
 
 # 2) Apps
 Install-ChocolateyIfMissing
-Install-AppIfMissing "Google Chrome" "googlechrome" "C:\Program Files\Google\Chrome\Application\chrome.exe"
+Install-AppIfMissing "Chrome" "googlechrome" "C:\Program Files\Google\Chrome\Application\chrome.exe"
 Install-AppIfMissing "Firefox" "firefox" "C:\Program Files\Mozilla Firefox\firefox.exe"
 Install-AppIfMissing "Zoom" "zoom" "C:\Program Files\Zoom\bin\Zoom.exe"
-Install-AppIfMissing "7-Zip" "7zip.install" "C:\Program Files\7-Zip\7z.exe"
+Install-AppIfMissing "7zip" "7zip.install" "C:\Program Files\7-Zip\7z.exe"
 
-if (-not (Test-AppInstalled "PDFgear" "C:\Program Files\PDFgear\PDFgear.exe")) {
-    Install-AppIfMissing "PDFgear" "pdfgear" "C:\Program Files\PDFgear\PDFgear.exe"
-}
-else {
-    Write-Host "PDFgear already installed. Skipping..." -ForegroundColor Yellow
-}
+Write-TNLog "Apps installed"
 
-Write-TNLog "Application deployment completed"
-
-# 3) RustDesk
+# 3) RustDesk (NO CHANGE)
 Write-Host "Deploying RustDesk..." -ForegroundColor Cyan
-Write-TNLog "Starting RustDesk deployment"
 
 Install-RustDeskIfMissing
-Start-Sleep -Seconds 5
+Start-Sleep 5
 Configure-RustDesk -ForceReset:$ForceResetRustDesk
 
-Write-TNLog "RustDesk deployment completed"
-Write-Host "RustDesk deployment completed" -ForegroundColor Green
+Write-Host "RustDesk done" -ForegroundColor Green
 
-# 4) SRFax
+# 4) SRFax (Enterprise version)
 Write-Host "Deploying SRFax..." -ForegroundColor Cyan
-Write-TNLog "Starting SRFax deployment"
 
-$srFaxInstalled = Install-SRFaxIfMissing
+$sr = Install-SRFaxIfMissing
 
-if ($srFaxInstalled) {
-    Write-TNLog "SRFax deployment completed"
-    Write-Host "SRFax deployment completed" -ForegroundColor Green
-}
-else {
-    Write-TNLog "SRFax deployment failed"
-    Write-Host "SRFax deployment failed" -ForegroundColor Red
+if ($sr) {
+    Write-Host "SRFax OK" -ForegroundColor Green
+} else {
+    Write-Host "SRFax FAILED" -ForegroundColor Red
 }
 
 # 5) Inventory
 $sys = Get-SystemInfo
-$sys | Format-List
 
 Save-SystemInventory $sys
-Write-TNLog "System inventory saved"
 
-$inventoryRecord = Convert-ToTNInventoryRecord -SystemInfo $sys
-Export-TNInventoryCsv -InventoryRecord $inventoryRecord
-Update-TNMasterInventory -InventoryRecord $inventoryRecord
+$record = Convert-ToTNInventoryRecord $sys
+Export-TNInventoryCsv $record
+Update-TNMasterInventory $record
 
 # 6) Cleanup
 Invoke-TempCleanup
-Write-TNLog "Temp cleanup completed"
 
-Write-TNLog "Deployment finished"
-Write-Host "Base deployment section completed." -ForegroundColor Green
+Write-Host "TNUtility Completed Successfully" -ForegroundColor Green
+Write-TNLog "Finished"
