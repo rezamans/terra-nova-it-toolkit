@@ -120,7 +120,13 @@ function Show-TNUtilityDashboard {
     $editionBox.Location = New-Object System.Drawing.Point(150, 27)
     $editionBox.Width = 250
     $editionBox.DropDownStyle = 'DropDownList'
-    [void]$editionBox.Items.AddRange(@('M365Enterprise','LTSC2024ProPlus','LTSC2021ProPlus'))
+    [void]$editionBox.Items.AddRange(@(
+        'M365Enterprise',
+        'LTSC2024ProPlus',
+        'LTSC2024Standard',
+        'LTSC2021ProPlus',
+        'LTSC2021Standard'
+    ))
     $editionBox.SelectedIndex = 0
     $tabOffice.Controls.Add($editionBox)
 
@@ -165,8 +171,6 @@ function Show-TNUtilityDashboard {
         $cb.Text = $apps[$i]
         $cb.AutoSize = $true
 
-        # PowerShell 5.1 can parse arithmetic inside New-Object constructor syntax as Object[].
-        # Calculate coordinates first, then pass strongly typed integers to Point.
         [int]$column = $i % 3
         [int]$row = [math]::Floor($i / 3)
         [int]$x = 20 + ($column * 240)
