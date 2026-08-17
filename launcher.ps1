@@ -1,6 +1,7 @@
 Set-ExecutionPolicy Bypass -Scope Process -Force
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$repo = "https://raw.githubusercontent.com/rezamans/terra-nova-it-toolkit/main"
+$repo = "https://raw.githubusercontent.com/rezamans/terra-nova-it-toolkit/feature/office-winoptimize"
 
-irm "$repo/TNUtility.ps1" | iex
+$script = irm "$repo/TNUtility.ps1"
+& ([scriptblock]::Create($script)) -Dashboard
