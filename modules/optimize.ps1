@@ -29,6 +29,8 @@ function Get-TNOptimizationPlan {
         [pscustomobject]@{ Description='Disable suggested content and tips'; Risk='Low' },
         [pscustomobject]@{ Description='Disable tailored experiences'; Risk='Low' },
         [pscustomobject]@{ Description='Disable Start menu app suggestions'; Risk='Low' },
+        [pscustomobject]@{ Description='Disable Game Mode'; Risk='Low' },
+        [pscustomobject]@{ Description='Disable Xbox Game Bar / Game DVR'; Risk='Low' },
         [pscustomobject]@{ Description='Clean temporary files'; Risk='Low' }
     )
     if ($Preset -eq 'Advanced') {
@@ -57,6 +59,13 @@ function Invoke-TNWindowsOptimize {
     Set-TNRegistryDword -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' -Name 'SubscribedContent-338389Enabled' -Value 0 -Description 'Disable suggested content and tips'
     Set-TNRegistryDword -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Privacy' -Name 'TailoredExperiencesWithDiagnosticDataEnabled' -Value 0 -Description 'Disable tailored experiences'
     Set-TNRegistryDword -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' -Name 'SystemPaneSuggestionsEnabled' -Value 0 -Description 'Disable Start menu app suggestions'
+
+    # Gaming features are disabled for Terra Nova workstations.
+    Set-TNRegistryDword -Path 'HKCU:\Software\Microsoft\GameBar' -Name 'AutoGameModeEnabled' -Value 0 -Description 'Disable Game Mode'
+    Set-TNRegistryDword -Path 'HKCU:\Software\Microsoft\GameBar' -Name 'AllowAutoGameMode' -Value 0 -Description 'Disable automatic Game Mode'
+    Set-TNRegistryDword -Path 'HKCU:\System\GameConfigStore' -Name 'GameDVR_Enabled' -Value 0 -Description 'Disable Xbox Game DVR'
+    Set-TNRegistryDword -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR' -Name 'AppCaptureEnabled' -Value 0 -Description 'Disable Game Bar capture'
+    Set-TNRegistryDword -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR' -Name 'AllowGameDVR' -Value 0 -Description 'Disable Game DVR by policy'
 
     if ($Preset -eq 'Advanced') {
         Set-TNRegistryDword -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications' -Name 'GlobalUserDisabled' -Value 1 -Description 'Disable background app access for current user'
