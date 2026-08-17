@@ -3,9 +3,7 @@
 # FINAL (SRFax + K-Lite + Stable Core)
 
 [CmdletBinding()]
-param(
-    [switch]$ForceResetRustDesk
-)
+param()
 
 $ErrorActionPreference = 'Continue'
 
@@ -20,7 +18,6 @@ irm "$repo/logging.ps1" | iex
 irm "$repo/localadmin.ps1" | iex
 irm "$repo/apps.ps1" | iex
 irm "$repo/rustdesk.ps1" | iex
-irm "$repo/rustdesk-config.ps1" | iex
 irm "$repo/srfax.ps1" | iex
 irm "$repo/klite.ps1" | iex
 irm "$repo/system-info.ps1" | iex
@@ -41,9 +38,8 @@ Install-AppIfMissing "Firefox" "firefox" "C:\Program Files\Mozilla Firefox\firef
 Install-AppIfMissing "Zoom" "zoom" "C:\Program Files\Zoom\bin\Zoom.exe"
 Install-AppIfMissing "7-Zip" "7zip.install" "C:\Program Files\7-Zip\7z.exe"
 
+# RustDesk is installed only. Configuration is intentionally left manual.
 Install-RustDeskIfMissing
-Start-Sleep -Seconds 5
-Configure-RustDesk -ForceReset:$ForceResetRustDesk
 
 Install-SRFaxIfMissing
 Install-KLiteIfMissing
