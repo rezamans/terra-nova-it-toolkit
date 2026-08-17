@@ -76,46 +76,108 @@ function Install-TNSelectedApps {
         [ValidateSet('Auto','Winget','Chocolatey')][string]$PackageManager = 'Auto'
     )
 
+    $results = New-Object System.Collections.Generic.List[object]
+
     foreach ($name in $Names) {
         $app = $script:TNAppCatalog | Where-Object Name -eq $name | Select-Object -First 1
         if (-not $app) {
             Write-Warning "Unknown app: $name"
+            $results.Add([pscustomobject]@{ Name=$name; Success=$false; Source='None'; Message='Unknown application' })
             continue
         }
 
         $useWinget = $PackageManager -eq 'Winget' -or ($PackageManager -eq 'Auto' -and (Test-TNWingetAvailable))
+        $completed = $false
 
         try {
             if ($useWinget -and $app.WingetId) {
                 Write-Host "Installing $($app.Name) with Winget..." -ForegroundColor Cyan
                 if (Get-Command Write-TNLog -ErrorAction SilentlyContinue) { Write-TNLog "Installing $($app.Name) with Winget" }
+
                 & winget.exe install --id $app.WingetId --exact --silent --accept-package-agreements --accept-source-agreements
-                if ($LASTEXITCODE -notin @(0,-1978335189)) {
-                    if ($PackageManager -eq 'Auto' -and $app.Choco) {
-                        Write-Warning "Winget failed for $($app.Name); trying Chocolatey fallback."
-                    } else {
-                        throw "Winget exit code: $LASTEXITCODE"
-                    }
-                } else {
-                    continue
+                $wingetExit = $LASTEXITCODE
+
+                if ($wingetExit -in @(0,-1978335189)) {
+                    Write-Host "[DONE] $($app.Name) installation completed with Winget." -ForegroundColor Green
+                    if (Get-Command Write-TNLog -ErrorAction SilentlyContinue) { Write-TNLog "Install completed: $($app.Name) with Winget (exit $wingetExit)" }
+                    $results.Add([pscustomobject]@{ Name=$app.Name; Success=$true; Source='Winget'; Message='Installation completed' })
+                    $completed = $true
+                }
+                elseif ($PackageManager -eq 'Auto' -and $app.Choco) {
+                    Write-Warning "Winget failed for $($app.Name); trying Chocolatey fallback."
+                }
+                else {
+                    throw "Winget exit code: $wingetExit"
                 }
             }
 
-            if ($app.Choco) {
+            if (-not $completed -and $app.Choco) {
                 if (-not (Test-Path 'C:\ProgramData\chocolatey\bin\choco.exe')) {
                     if (Get-Command Install-ChocolateyIfMissing -ErrorAction SilentlyContinue) { Install-ChocolateyIfMissing | Out-Null }
                 }
+
                 Write-Host "Installing $($app.Name) with Chocolatey..." -ForegroundColor Cyan
                 & 'C:\ProgramData\chocolatey\bin\choco.exe' install $app.Choco -y --no-progress
-                if ($LASTEXITCODE -ne 0) { throw "Chocolatey exit code: $LASTEXITCODE" }
-                continue
+                $chocoExit = $LASTEXITCODE
+
+                if ($chocoExit -ne 0) { throw "Chocolatey exit code: $chocoExit" }
+
+                Write-Host "[DONE] $($app.Name) installation completed with Chocolatey." -ForegroundColor Green
+                if (Get-Command Write-TNLog -ErrorAction SilentlyContinue) { Write-TNLog "Install completed: $($app.Name) with Chocolatey" }
+                $results.Add([pscustomobject]@{ Name=$app.Name; Success=$true; Source='Chocolatey'; Message='Installation completed' })
+                $completed = $true
             }
 
-            throw 'No supported package source is configured for this app.'
+            if (-not $completed) {
+                throw 'No supported package source is configured for this app.'
+            }
         }
         catch {
             Write-Warning "Failed to install $($app.Name): $($_.Exception.Message)"
             if (Get-Command Write-TNLog -ErrorAction SilentlyContinue) { Write-TNLog "Install failed: $($app.Name) - $($_.Exception.Message)" }
+            $results.Add([pscustomobject]@{ Name=$app.Name; Success=$false; Source=''; Message=$_.Exception.Message })
         }
     }
+
+    $successes = @($results | Where-Object Success)
+    $failures = @($results | Where-Object { -not $_.Success })
+
+    Write-Host ''
+    Write-Host '========== Installation Summary ==========' -ForegroundColor Cyan
+    foreach ($result in $results) {
+        if ($result.Success) {
+            Write-Host "[OK] $($result.Name) - $($result.Source)" -ForegroundColor Green
+        }
+        else {
+            Write-Host "[FAILED] $($result.Name) - $($result.Message)" -ForegroundColor Red
+        }
+    }
+    Write-Host "Completed: $($successes.Count)   Failed: $($failures.Count)" -ForegroundColor Cyan
+    Write-Host '==========================================' -ForegroundColor Cyan
+
+    # When called from the WinForms dashboard, show a clear completion message.
+    if ('System.Windows.Forms.MessageBox' -as [type]) {
+        $message = "Installation finished.`r`n`r`nCompleted: $($successes.Count)`r`nFailed: $($failures.Count)"
+        if ($successes.Count -gt 0) {
+            $message += "`r`n`r`nInstalled:`r`n- " + (($successes | ForEach-Object Name) -join "`r`n- ")
+        }
+        if ($failures.Count -gt 0) {
+            $message += "`r`n`r`nFailed:`r`n- " + (($failures | ForEach-Object Name) -join "`r`n- ")
+        }
+
+        $icon = if ($failures.Count -eq 0) {
+            [System.Windows.Forms.MessageBoxIcon]::Information
+        } else {
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        }
+
+        [System.Windows.Forms.MessageBox]::Show(
+            $message,
+            'Terra Nova IT Utility - Installation Complete',
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            $icon
+        ) | Out-Null
+    }
+
+    return $results
 }
