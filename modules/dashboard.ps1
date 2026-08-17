@@ -164,7 +164,15 @@ function Show-TNUtilityDashboard {
         $cb = New-Object System.Windows.Forms.CheckBox
         $cb.Text = $apps[$i]
         $cb.AutoSize = $true
-        $cb.Location = New-Object System.Drawing.Point(20 + (($i % 3) * 240), 30 + ([math]::Floor($i / 3) * 40))
+
+        # PowerShell 5.1 can parse arithmetic inside New-Object constructor syntax as Object[].
+        # Calculate coordinates first, then pass strongly typed integers to Point.
+        [int]$column = $i % 3
+        [int]$row = [math]::Floor($i / 3)
+        [int]$x = 20 + ($column * 240)
+        [int]$y = 30 + ($row * 40)
+        $cb.Location = New-Object System.Drawing.Point -ArgumentList $x, $y
+
         $excludeGroup.Controls.Add($cb)
         $checks[$apps[$i]] = $cb
     }
