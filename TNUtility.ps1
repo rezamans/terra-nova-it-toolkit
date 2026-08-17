@@ -33,7 +33,7 @@ irm "$repoFeature/restore-point.ps1" | iex
 irm "$repoFeature/optimize.ps1" | iex
 irm "$repoFeature/office.ps1" | iex
 irm "$repoFeature/install.ps1" | iex
-irm "$repoFeature/dashboard.ps1" | iex
+irm "$repoFeature/dashboard-v2.ps1" | iex
 
 Write-Host "Modules loaded." -ForegroundColor Green
 
