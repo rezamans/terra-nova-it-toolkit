@@ -3,4 +3,5 @@ Set-ExecutionPolicy Bypass -Scope Process -Force
 
 $repo = "https://raw.githubusercontent.com/rezamans/terra-nova-it-toolkit/main"
 
-irm "$repo/TNUtility.ps1" | iex
+$script = irm "$repo/TNUtility.ps1"
+& ([scriptblock]::Create($script)) -Dashboard
