@@ -63,7 +63,7 @@ function Get-TNOfficeDeploymentTool {
 function Get-TNOfficePreset {
     param(
         [Parameter(Mandatory)]
-        [ValidateSet('M365Enterprise','LTSC2024ProPlus','LTSC2021ProPlus')]
+        [ValidateSet('M365Enterprise','LTSC2024ProPlus','LTSC2024Standard','LTSC2021ProPlus','LTSC2021Standard')]
         [string]$Edition
     )
 
@@ -74,8 +74,14 @@ function Get-TNOfficePreset {
         'LTSC2024ProPlus' {
             return [pscustomobject]@{ ProductId = 'ProPlus2024Volume'; Channel = 'PerpetualVL2024' }
         }
+        'LTSC2024Standard' {
+            return [pscustomobject]@{ ProductId = 'Standard2024Volume'; Channel = 'PerpetualVL2024' }
+        }
         'LTSC2021ProPlus' {
             return [pscustomobject]@{ ProductId = 'ProPlus2021Volume'; Channel = 'PerpetualVL2021' }
+        }
+        'LTSC2021Standard' {
+            return [pscustomobject]@{ ProductId = 'Standard2021Volume'; Channel = 'PerpetualVL2021' }
         }
     }
 }
@@ -83,7 +89,7 @@ function Get-TNOfficePreset {
 function New-TNOfficeConfiguration {
     [CmdletBinding()]
     param(
-        [ValidateSet('M365Enterprise','LTSC2024ProPlus','LTSC2021ProPlus')]
+        [ValidateSet('M365Enterprise','LTSC2024ProPlus','LTSC2024Standard','LTSC2021ProPlus','LTSC2021Standard')]
         [string]$Edition = 'M365Enterprise',
 
         [ValidateSet('64','32')]
@@ -144,7 +150,7 @@ function New-TNOfficeConfiguration {
 function Install-TNOffice {
     [CmdletBinding(SupportsShouldProcess)]
     param(
-        [ValidateSet('M365Enterprise','LTSC2024ProPlus','LTSC2021ProPlus')]
+        [ValidateSet('M365Enterprise','LTSC2024ProPlus','LTSC2024Standard','LTSC2021ProPlus','LTSC2021Standard')]
         [string]$Edition = 'M365Enterprise',
 
         [ValidateSet('64','32')]
@@ -180,7 +186,7 @@ function Install-TNOffice {
 function Download-TNOfficeOffline {
     [CmdletBinding()]
     param(
-        [ValidateSet('M365Enterprise','LTSC2024ProPlus','LTSC2021ProPlus')]
+        [ValidateSet('M365Enterprise','LTSC2024ProPlus','LTSC2024Standard','LTSC2021ProPlus','LTSC2021Standard')]
         [string]$Edition = 'M365Enterprise',
         [ValidateSet('64','32')]
         [string]$Architecture = '64',
@@ -215,11 +221,11 @@ function Get-TNOfficeStatus {
         if (Test-Path $path) {
             $cfg = Get-ItemProperty -Path $path -ErrorAction SilentlyContinue
             return [pscustomobject]@{
-                Installed       = $true
+                Installed         = $true
                 ProductReleaseIds = $cfg.ProductReleaseIds
-                Version         = $cfg.VersionToReport
-                Architecture    = $cfg.Platform
-                UpdateChannel   = $cfg.UpdateChannel
+                Version           = $cfg.VersionToReport
+                Architecture      = $cfg.Platform
+                UpdateChannel     = $cfg.UpdateChannel
             }
         }
     }
